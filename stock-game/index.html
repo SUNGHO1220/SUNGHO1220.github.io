@@ -49,6 +49,18 @@ label.l{display:block;font-size:13px;font-weight:700;color:var(--sub);margin:14p
 .news .tag{display:inline-block;font-size:12px;font-weight:800;padding:3px 9px;border-radius:6px;background:#eef0f6;color:var(--navy);margin-bottom:8px}
 .news.rumor{border-left-color:#9aa1b5;background:repeating-linear-gradient(-45deg,#fff,#fff 10px,#fafafc 10px,#fafafc 20px)}
 .news.rumor .tag{background:#ffe9b0;color:#7a5800}
+.news.breaking{border-left-color:var(--up);background:#fff5f6;animation:flash 1.2s 2}
+.news.breaking .tag{background:var(--up);color:#fff}
+@keyframes flash{50%{box-shadow:0 0 0 6px rgba(229,48,74,.25)}}
+.quiz{border:2px solid #c9d8ff;background:#f5f8ff}
+.quiz .qq{font-weight:800;font-size:17px;margin:6px 0 12px;line-height:1.5}
+.qo{display:block;width:100%;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:11px 14px;margin-bottom:8px;font-weight:700;cursor:pointer}
+.qo.sel{border-color:var(--navy);background:var(--navy);color:#fff}
+.qo.right{border-color:var(--ok);background:var(--ok);color:#fff}
+.mvp{background:linear-gradient(135deg,#18203d,#2c3a6e);color:#fff;border-radius:var(--r);padding:18px 22px;display:flex;align-items:center;gap:16px}
+.mvp .big{font-size:40px}
+.mvp b{color:var(--gold)}
+.mv{font-size:12px;font-weight:800;margin-left:6px}
 .news.warn{border-left-color:var(--up)}
 .news.warn .tag{background:#ffe1e5;color:var(--up)}
 .news.ipo{border-left-color:var(--gold)}
@@ -209,8 +221,24 @@ function spark(cid, upto, reveals) {
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
 }
 function newsCard(n) {
-  const k = n.tag === '루머' ? 'rumor' : n.tag === '경고' ? 'warn' : n.tag === '상장' ? 'ipo' : '';
+  const k = n.tag === '루머' ? 'rumor' : n.tag === '경고' ? 'warn' : n.tag === '상장' ? 'ipo' : n.tag === '속보' ? 'breaking' : '';
   return `<div class="card news ${k}"><span class="tag">${esc(n.tag)}</span><div class="t">${esc(n.title)}</div><div class="b">${esc(n.body)}</div></div>`;
+}
+const curNews = (list, r) => { const a = list.filter(n => n.round === r); return [...a.filter(n => n.tag === '속보'), ...a.filter(n => n.tag !== '속보')]; };
+function roundMvp(results, players, r) {
+  let best = null;
+  results.filter(x => x.round === r).forEach(x => { const g = x.value_after / x.value_before - 1; if (!best || g > best.g) best = { g, id: x.player_id }; });
+  if (!best) return null; const p = players.find(x => x.id === best.id);
+  return p ? { name: p.nickname, g: best.g * 100 } : null;
+}
+function mvpBox(m, r) {
+  return m ? `<div class="mvp"><div class="big">🌟</div><div><div style="font-size:14px;opacity:.8;font-weight:700">${year(r)}년 올해의 투자왕</div><div style="font-size:24px;font-weight:900"><b>${esc(m.name)}</b> · ${pctTxt(m.g)}</div></div></div>` : '';
+}
+function quizAnswerBox(qz) {
+  if (!qz) return '';
+  return `<div class="card quiz"><b>📝 올해의 경제 퀴즈 정답</b><div class="qq">${esc(qz.question)}</div>
+    ${qz.options.map((o, i) => `<div class="qo ${i + 1 === qz.answer ? 'right' : ''}">${i + 1}. ${esc(o)}</div>`).join('')}
+    <div class="muted" style="line-height:1.6">${esc(qz.explain)}</div></div>`;
 }
 function topBar(right) {
   return `<div class="top"><div class="logo">📈 미래경제 <b>5년</b></div><div class="sp"></div>${right || ''}</div>`;
@@ -247,6 +275,8 @@ function computeBadges(players, results, reveals) {
     const iron = best(rs => { const r = rs.find(x => x.round === worstR); return r ? r.value_after / r.value_before - 1 : -9; });
     if (iron) out.push({ i:'🛡️', n:'강철 멘탈', who:iron.who, d:`가장 힘들었던 ${year(worstR)}년에 ${pctTxt(iron.score * 100)}로 가장 잘 버텼어요.` });
   }
+  const qk = best(rs => rs.filter(r => r.quiz_correct).length, 0);
+  if (qk) out.push({ i:'📝', n:'경제 퀴즈왕', who:qk.who, d:`경제 퀴즈를 ${qk.score}문제 맞혔어요.` });
   const safe = best(rs => rs.length ? rs.reduce((s, r) => s + (1 - sumAlloc(r.alloc) / r.value_before), 0) / rs.length : 0, 0.3);
   if (safe) out.push({ i:'🐢', n:'안전제일', who:safe.who, d:`평균 ${Math.round(safe.score * 100)}%를 예금에 넣는 신중파였어요.` });
   return out;
@@ -255,7 +285,8 @@ function computeBadges(players, results, reveals) {
 // =====================================================
 //                       학생
 // =====================================================
-const S = { token:null, me:null, game:null, sub:null, hint:null, alloc:{}, card:null, cardTarget:null, key:'', reveals:[], news:[] };
+const S = { token:null, me:null, game:null, sub:null, hint:null, alloc:{}, card:null, cardTarget:null, key:'', reveals:[], news:[], quiz:null, quizAns:null };
+const gkey = g => g.phase + ':' + g.round + ':' + (g.breaking_round || 0);
 
 async function studentBoot() {
   S.token = localStorage.getItem('sg_token');
@@ -293,16 +324,22 @@ function studentJoin(rejoin) {
 
 async function studentRefresh(force) {
   const r = await rpc('sg_me', { p_token: S.token });
-  const key = r.game.phase + ':' + r.game.round;
+  const key = gkey(r.game);
+  const sameYear = S.key && S.key.split(':').slice(0, 2).join(':') === key.split(':').slice(0, 2).join(':');
   S.me = r.player; S.game = r.game;
   if (force || key !== S.key) {
-    S.key = key; S.sub = r.submission; S.hint = r.hint;
-    S.alloc = {}; S.card = null; S.cardTarget = null;
-    if (S.sub) {
-      Object.entries(S.sub.alloc).forEach(([k, v]) => S.alloc[k] = Math.floor(v / 10000));
-      S.card = S.sub.card; S.cardTarget = S.sub.card_target;
+    const onlyBreaking = !force && sameYear;
+    S.key = key; S.hint = r.hint; S.quizAns = r.quiz_answer;
+    if (!onlyBreaking) {
+      S.sub = r.submission; S.alloc = {}; S.card = null; S.cardTarget = null;
+      if (S.sub) {
+        Object.entries(S.sub.alloc).forEach(([k, v]) => S.alloc[k] = Math.floor(v / 10000));
+        S.card = S.sub.card; S.cardTarget = S.sub.card_target;
+      }
     }
-    [S.reveals, S.news] = await Promise.all([loadReveals(S.game.id), rpc('sg_news', { p_code: S.game.code })]);
+    [S.reveals, S.news, S.quiz] = await Promise.all([loadReveals(S.game.id), rpc('sg_news', { p_code: S.game.code }),
+      S.game.phase === 'invest' ? rpc('sg_quiz', { p_code: S.game.code }) : null]);
+    if (onlyBreaking) toast('📢 속보가 발표됐어요! 뉴스를 확인하세요.');
     await studentRender();
     studentWatch();
   }
@@ -311,7 +348,7 @@ async function studentRefresh(force) {
 function studentWatch() {
   clearTimers();
   every(4000, async () => {
-    try { const g = await loadGame(S.game.id); if (g.phase + ':' + g.round !== S.key) await studentRefresh(); else S.game = g; } catch (e) {}
+    try { const g = await loadGame(S.game.id); if (gkey(g) !== S.key) await studentRefresh(); else S.game = g; } catch (e) {}
   });
   if (S.game.phase === 'invest') every(1000, () => {
     const el = document.getElementById('stimer'); if (!el || !S.game.deadline) return;
@@ -344,6 +381,8 @@ async function studentRender() {
         <li>투자하지 않은 돈은 <b>예금(연 3%)</b>으로 안전하게 불어나요.</li>
         <li>1년이 지나면 주가가 공개되고 내 돈이 바뀌어요.</li>
         <li>찬스 카드 2장(손실 보험, 애널리스트 리포트)은 게임 전체에서 한 번씩만 쓸 수 있어요.</li>
+        <li>매년 <b>경제 퀴즈</b>를 맞히면 보너스 30만원!</li>
+        <li>투자 시간 중에 선생님이 <b>📢 속보</b>를 터뜨릴 수 있어요. 끝까지 집중!</li>
         <li>5년 뒤 돈이 가장 많은 사람이 우승!</li></ol></div></div></div>`;
     return;
   }
@@ -358,7 +397,7 @@ function usedUnits() { return Object.values(S.alloc).reduce((s, v) => s + (v || 
 
 function studentInvest() {
   const g = S.game, r = g.round, used = S.me.cards_used || [];
-  const thisNews = S.news.filter(n => n.round === r), oldNews = S.news.filter(n => n.round < r);
+  const thisNews = curNews(S.news, r), oldNews = S.news.filter(n => n.round < r);
   const cos = availCos().map(c => {
     const price = priceAfter(c.id, r - 1, S.reveals), last = effectOf(c.id, r - 1, S.reveals);
     const isNew = c.ipo_round === r && r > 1;
@@ -385,6 +424,10 @@ function studentInvest() {
       <div class="grid g2" style="margin-top:10px">${oldNews.map(n => newsCard({ ...n, title: `[${year(n.round)}] ` + n.title })).join('')}</div></details>` : ''}
     <h2>🏢 투자할 회사 고르기 <span class="muted" style="font-size:14px;font-weight:600">· 단위: 만원</span></h2>
     <div class="grid g3">${cos}</div>
+    ${S.quiz ? `<h2>📝 올해의 경제 퀴즈 <span class="muted" style="font-size:14px;font-weight:600">· 맞히면 보너스 30만원!</span></h2>
+    <div class="card quiz"><div class="qq">${esc(S.quiz.question)}</div>
+      ${S.quiz.options.map((o, i) => `<button class="qo ${S.quizAns === i + 1 ? 'sel' : ''}" data-q="${i + 1}">${i + 1}. ${esc(o)}</button>`).join('')}
+      <div class="muted" style="font-size:13px" id="qmsg">${S.quizAns ? '✅ 답이 저장됐어요. 마감 전까지 바꿀 수 있어요.' : '보기를 누르면 바로 저장돼요.'}</div></div>` : ''}
     <h2>🃏 찬스 카드 <span class="muted" style="font-size:14px;font-weight:600">· 게임 전체에서 각각 한 번만!</span></h2>
     <div class="items">
       ${item('insurance', '🛡️', '손실 보험', '올해 내 돈이 줄어들면, 줄어든 금액의 절반을 돌려받아요.', `<button class="btn sm ${S.card === 'insurance' ? 'gold' : 'ghost'}" data-card="insurance">${S.card === 'insurance' ? '✓ 사용 예약됨' : '올해 사용하기'}</button>`)}
@@ -433,6 +476,13 @@ function studentInvest() {
     markDirty(); const keepAlloc = { ...S.alloc }; studentInvest(); S.alloc = keepAlloc;
     if (S.sub) document.getElementById('b-sub').textContent = '수정한 내용 제출하기';
   });
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = async () => {
+    try {
+      await rpc('sg_answer_quiz', { p_token: S.token, p_answer: +b.dataset.q }); S.quizAns = +b.dataset.q;
+      document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('sel', x === b));
+      document.getElementById('qmsg').textContent = '✅ 답이 저장됐어요. 마감 전까지 바꿀 수 있어요.';
+    } catch (e) { toast(e.message, true); }
+  });
   const ag = document.getElementById('anago');
   if (ag) ag.onclick = async () => {
     const c = document.getElementById('anasel').value; if (!c) return toast('회사를 먼저 골라 주세요.', true);
@@ -463,13 +513,14 @@ function myLine(res, reveals) {
   const inv = Object.values(res.alloc).reduce((s, v) => s + +v, 0), dep = res.value_before - inv;
   if (dep > 0) rows.push(`<tr><td>🏦 예금</td><td class="n">${man(dep)}</td><td class="n up">+3%</td><td class="n">${man(dep * 1.03)}</td></tr>`);
   return `<table class="rank"><tr><th>투자처</th><th style="text-align:right">넣은 돈</th><th style="text-align:right">변화</th><th style="text-align:right">1년 뒤</th></tr>${rows.join('')}</table>
+    ${res.quiz_correct === true ? `<div class="hint" style="margin-top:10px;background:#e8f8ef">📝 경제 퀴즈 정답! 보너스 +30만원</div>` : res.quiz_correct === false ? `<div class="hint" style="margin-top:10px;background:#f4f5f8">📝 경제 퀴즈는 아쉽게 틀렸어요.</div>` : ''}
     ${res.card === 'insurance' ? `<div class="hint" style="margin-top:10px">🛡️ 손실 보험 사용${res.value_after > res.value_before ? ' (돈이 늘어서 보험은 필요 없었어요)' : ' — 손실의 절반을 돌려받았어요'}</div>` : ''}`;
 }
 
 async function studentReveal() {
   const g = S.game;
-  const [ps, myRes] = await Promise.all([loadPlayers(g.id), q(sb.from('sg_results').select('*').eq('player_id', S.me.id).eq('round', g.round))]);
-  const res = myRes[0]; const rank = ps.slice().sort((a, b) => b.value - a.value).findIndex(p => p.id === S.me.id);
+  const [ps, yr] = await Promise.all([loadPlayers(g.id), q(sb.from('sg_results').select('*').eq('game_id', g.id).eq('round', g.round))]);
+  const res = yr.find(x => x.player_id === S.me.id); const mvp = roundMvp(yr, ps, g.round); const rank = ps.slice().sort((a, b) => b.value - a.value).findIndex(p => p.id === S.me.id);
   const rv = S.reveals.find(x => x.round === g.round);
   const ch = res ? (res.value_after / res.value_before - 1) * 100 : 0;
   app.innerHTML = studentHeader() + `<div class="wrap">
@@ -483,10 +534,12 @@ async function studentReveal() {
       <div class="card">${res ? myLine(res, S.reveals) : '<div class="muted">이번 해에는 참여 기록이 없어요.</div>'}
         ${res && !Object.keys(res.alloc).length ? '<div class="muted" style="margin-top:8px">투자를 제출하지 않아 모두 예금에 들어갔어요.</div>' : ''}</div>
     </div>
+    <div style="margin-top:14px">${mvpBox(mvp, g.round)}</div>
     <h2>📊 ${year(g.round)}년 주가 변화</h2>
     <div class="card">${(rv ? rv.effects : []).slice().sort((a, b) => b.pct - a.pct).map(e => `<div class="rv" style="grid-template-columns:170px 1fr 80px">
       <div class="nm" style="font-weight:800">${co(e.company).emoji} ${esc(co(e.company).name)}</div><div class="muted" style="font-size:14px">${esc(e.explain)}</div><div class="pc ${cls(e.pct)}">${pctTxt(e.pct)}</div></div>`).join('')}</div>
     ${rv && rv.summary ? `<div class="card" style="margin-top:14px;background:#fffaea"><b>💡 올해의 교훈</b><div style="margin-top:6px;line-height:1.6">${esc(rv.summary)}</div></div>` : ''}
+    ${rv && rv.quiz ? `<div style="margin-top:14px">${quizAnswerBox(rv.quiz)}</div>` : ''}
     <p class="muted" style="text-align:center;margin-top:24px">선생님이 다음 해를 시작하면 새 뉴스가 나와요.</p></div>`;
 }
 
@@ -555,10 +608,11 @@ async function teacherLogin(code, pin) {
 async function teacherRefresh(force) {
   const [g, ps] = await Promise.all([loadGame(T.game.id), loadPlayers(T.game.id)]);
   T.game = g; T.players = ps;
-  const key = g.phase + ':' + g.round;
+  const key = gkey(g);
   if (force || key !== T.key) {
     T.key = key;
-    [T.reveals, T.results, T.news] = await Promise.all([loadReveals(g.id), loadResults(g.id), rpc('sg_news', { p_code: g.code })]);
+    [T.reveals, T.results, T.news, T.quiz] = await Promise.all([loadReveals(g.id), loadResults(g.id), rpc('sg_news', { p_code: g.code }),
+      g.phase === 'invest' ? rpc('sg_quiz', { p_code: g.code }) : null]);
     teacherRender(); teacherWatch();
   } else teacherLive();
 }
@@ -593,6 +647,8 @@ function bindTeacherCommon() {
   const tm = document.getElementById('tmin'); if (tm) tm.onchange = () => T.minutes = +tm.value;
   const st = document.getElementById('tstart');
   if (st) st.onclick = async () => { st.disabled = true; try { await rpc('sg_teacher_start', { p_code: T.code, p_pin: T.pin, p_minutes: T.minutes }); await teacherRefresh(); } catch (e) { toast(e.message, true); st.disabled = false; } };
+  const tb = document.getElementById('tbreak');
+  if (tb) tb.onclick = async () => { tb.disabled = true; try { await rpc('sg_teacher_breaking', { p_code: T.code, p_pin: T.pin }); await teacherRefresh(); } catch (e) { toast(e.message, true); tb.disabled = false; } };
   const cl = document.getElementById('tclose');
   if (cl) cl.onclick = async () => {
     const n = T.players.filter(p => p.submitted_round === T.game.round).length;
@@ -623,13 +679,18 @@ function teacherRender() {
     document.getElementById('tcopy').onclick = () => { navigator.clipboard.writeText(joinUrl()); toast('복사했어요: ' + joinUrl()); };
     teacherLive();
   } else if (g.phase === 'invest') {
-    const news = T.news.filter(n => n.round === g.round);
+    const news = curNews(T.news, g.round); const broke = (g.breaking_round || 0) >= g.round;
     app.innerHTML = teacherHeader() + `<div class="wrap">
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><h1 style="font-size:36px">📰 ${year(g.round)}년 뉴스</h1><div class="sp" style="flex:1"></div>
         <div class="timer" id="ttimer"></div></div>
       <div class="grid g2" style="margin-top:12px">${news.map(newsCard).join('')}</div>
+      ${T.quiz ? `<div class="card quiz" style="margin-top:14px"><b>📝 올해의 경제 퀴즈 · 맞히면 +30만원</b><div class="qq" style="font-size:22px">${esc(T.quiz.question)}</div>
+        <div class="grid g2">${T.quiz.options.map((o, i) => `<div class="qo" style="cursor:default;font-size:18px">${i + 1}. ${esc(o)}</div>`).join('')}</div></div>` : ''}
       <h2>제출 현황 · <span id="tsubn"></span></h2><div class="card"><div class="chips" id="tchips"></div></div>
-      <div style="text-align:center;margin-top:24px"><button class="btn gold big" id="tclose" style="font-size:22px;padding:18px 34px">⏰ 마감하고 1년 보내기</button></div></div>`;
+      <div style="text-align:center;margin-top:24px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+        <button class="btn big" id="tbreak" ${broke ? 'disabled' : ''} style="background:var(--up)">${broke ? '📢 속보 발표함' : '📢 속보 발표하기'}</button>
+        <button class="btn gold big" id="tclose" style="font-size:22px;padding:18px 34px">⏰ 마감하고 1년 보내기</button></div>
+      <p class="muted" style="text-align:center">속보는 투자 시간 중간쯤 터뜨리면 학생들이 투자를 다시 고민하게 돼요.</p></div>`;
     teacherLive(); teacherTimer();
   } else if (g.phase === 'reveal' || g.phase === 'final') {
     teacherReveal();
@@ -638,9 +699,10 @@ function teacherRender() {
 }
 function rankTable(list, prevMap, limit) {
   const showYr = Object.keys(prevMap).length > 0;
+  const prevRank = {}; Object.entries(prevMap).sort((a, b) => b[1] - a[1]).forEach(([id], i) => prevRank[id] = i);
   return `<table class="rank"><tr><th></th><th>이름</th><th style="text-align:right">자산</th>${showYr ? '<th style="text-align:right">올해</th>' : '<th style="text-align:right">5년 수익률</th>'}</tr>${list.slice(0, limit).map((p, i) => {
     const pv = showYr ? prevMap[p.id] : START_MONEY; const ch = pv ? (p.value / pv - 1) * 100 : 0;
-    return `<tr><td class="medal">${medal(i)}</td><td style="font-weight:700">${esc(p.nickname)}</td><td class="n">${man(p.value)}</td><td class="n ${cls(ch)}">${pv ? pctTxt(ch) : '-'}</td></tr>`;
+    return `<tr><td class="medal">${medal(i)}</td><td style="font-weight:700">${esc(p.nickname)}${showYr && prevRank[p.id] !== undefined && prevRank[p.id] !== i ? `<span class="mv ${prevRank[p.id] > i ? 'up' : 'down'}">${prevRank[p.id] > i ? '▲' : '▼'}${Math.abs(prevRank[p.id] - i)}</span>` : ''}</td><td class="n">${man(p.value)}</td><td class="n ${cls(ch)}">${pv ? pctTxt(ch) : '-'}</td></tr>`;
   }).join('')}</table>`;
 }
 function teacherReveal() {
@@ -666,7 +728,9 @@ function teacherReveal() {
     <h1 class="${animate ? 'pop' : ''}" ${d(1)} style="font-size:36px">📅 ${year(g.round)}년 결과 발표</h1>
     ${rv && rv.shock_title ? `<div class="${animate ? 'pop' : ''}" ${d(1.6)}><div class="shock" style="margin:16px 0"><h2>${esc(rv.shock_title)}</h2><div style="font-size:18px">${esc(rv.shock_body)}</div></div></div>` : ''}
     <div class="card" style="margin-top:14px">${rows}</div>
-    <div class="grid g2 ${animate ? 'pop' : ''}" ${d(after)} style="margin-top:16px">
+    <div class="${animate ? 'pop' : ''}" ${d(after)} style="margin-top:16px">${mvpBox(roundMvp(T.results, T.players, g.round), g.round)}</div>
+    ${rv && rv.quiz ? `<div class="${animate ? 'pop' : ''}" ${d(after + .4)} style="margin-top:16px">${quizAnswerBox(rv.quiz)}</div>` : ''}
+    <div class="grid g2 ${animate ? 'pop' : ''}" ${d(after + .8)} style="margin-top:16px">
       <div class="card"><h2 style="margin-top:0">🏆 우리 반 순위 TOP 10</h2>${rankTable(sorted, prev, 10)}</div>
       <div class="card" style="background:#fffaea"><h2 style="margin-top:0">💡 올해의 교훈</h2><div style="font-size:19px;line-height:1.7">${esc(rv ? rv.summary : '')}</div>
         <div style="margin-top:20px">${isFinal ? `<button class="btn gold big" id="tfinal">🎉 최종 시상식 보기</button>` : `${minutesSel()} <button class="btn gold big" id="tstart">▶ ${year(g.round + 1)}년 시작</button>`}</div></div>
