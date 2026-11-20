@@ -289,11 +289,29 @@ const S = { token:null, me:null, game:null, sub:null, hint:null, alloc:{}, card:
 const gkey = g => g.phase + ':' + g.round + ':' + (g.breaking_round || 0);
 
 async function studentBoot() {
-  S.token = localStorage.getItem('sg_token');
-  if (S.token) {
-    try { await studentRefresh(true); return; } catch (e) { localStorage.removeItem('sg_token'); S.token = null; }
+  const tok = localStorage.getItem('sg_token');
+  if (tok) {
+    try {
+      const r = await rpc('sg_me', { p_token: tok });
+      const urlCode = (qs.get('code') || '').toUpperCase();
+      // 끝난 게임이거나, 다른 반 링크로 들어왔으면 이전 기록은 건너뛰기
+      if (r.game.phase !== 'final' && (!urlCode || urlCode === r.game.code)) return studentResumeAsk(tok, r);
+    } catch (e) {}
+    localStorage.removeItem('sg_token');
   }
   studentJoin();
+}
+function studentResumeAsk(tok, r) {
+  app.innerHTML = topBar() + `<div class="wrap center"><div class="card" style="max-width:460px;width:100%;text-align:center">
+    <div style="font-size:48px">🙋</div><h1>이 노트북에 하던 게임이 있어요</h1>
+    <div class="card" style="background:#f6f7fa;margin:16px 0;font-size:18px">
+      <b>${esc(r.game.class_name)}</b> · ${r.player.number}번 <b>${esc(r.player.nickname)}</b><br>
+      <span class="muted" style="font-size:15px">${r.game.phase === 'lobby' ? '시작 전' : year(r.game.round) + '년 진행 중'} · 자산 ${man(r.player.value)}</span></div>
+    <p class="muted">내가 맞으면 이어서 하고, 아니면 새로 입장하세요.</p>
+    <button class="btn gold big" style="width:100%" id="rs-yes">✅ 나 맞아요, 이어서 하기</button>
+    <button class="btn ghost big" style="width:100%;margin-top:10px" id="rs-no">아니에요, 새로 입장하기</button></div></div>`;
+  document.getElementById('rs-yes').onclick = async () => { S.token = tok; S.key = ''; try { await studentRefresh(true); } catch (e) { toast(e.message, true); } };
+  document.getElementById('rs-no').onclick = () => { localStorage.removeItem('sg_token'); studentJoin(); };
 }
 
 function studentJoin(rejoin) {
@@ -345,6 +363,12 @@ async function studentRefresh(force) {
   }
 }
 
+function studentLogout() {
+  if (!confirm('이 노트북에서 나갈까요? 다시 들어오려면 선생님께 재입장 코드를 받아야 해요.')) return;
+  localStorage.removeItem('sg_token'); clearTimers();
+  if (S.chan) { sb.removeChannel(S.chan); S.chan = null; }
+  S.token = null; S.key = ''; studentJoin();
+}
 function studentWatch() {
   clearTimers();
   every(4000, async () => {
@@ -365,7 +389,8 @@ function studentHeader() {
   const g = S.game;
   const yr = g.phase === 'lobby' ? '대기 중' : `${year(g.round)}년`;
   return topBar(`<span class="pill">${esc(g.class_name)}</span><span class="pill">${yr}</span>
-    <span class="pill">${S.me.number}번 ${esc(S.me.nickname)}</span><span class="pill gold">💰 ${man(S.me.value)}</span>`);
+    <span class="pill">${S.me.number}번 ${esc(S.me.nickname)}</span><span class="pill gold">💰 ${man(S.me.value)}</span>
+    <button class="btn sm ghost" onclick="studentLogout()">나가기</button>`);
 }
 
 async function studentRender() {
@@ -574,13 +599,33 @@ const T = { code:null, pin:null, game:null, players:[], reveals:[], results:[], 
 
 async function teacherBoot() {
   document.body.classList.add('teacher');
-  const saved = JSON.parse(localStorage.getItem('sg_teacher') || 'null');
-  if (saved) { try { await teacherLogin(saved.code, saved.pin); return; } catch (e) { localStorage.removeItem('sg_teacher'); } }
+  localStorage.removeItem('sg_teacher');   // 예전 방식(자동 입장) 정리
   teacherLoginScreen();
 }
-function teacherLoginScreen() {
+const savedGames = () => { try { return JSON.parse(localStorage.getItem('sg_teacher_games') || '[]'); } catch (e) { return []; } };
+function saveGame(g, pin) {
+  const list = savedGames().filter(x => x.code !== g.code);
+  list.unshift({ code: g.code, pin, class_name: g.class_name, at: Date.now() });
+  localStorage.setItem('sg_teacher_games', JSON.stringify(list.slice(0, 30)));
+}
+async function teacherLoginScreen() {
   clearTimers();
-  app.innerHTML = topBar('<span class="pill">교사용</span>') + `<div class="wrap"><div class="grid g2" style="margin-top:30px">
+  if (T.chan) { sb.removeChannel(T.chan); T.chan = null; }
+  const list = savedGames();
+  let info = {};
+  if (list.length) {
+    try { (await q(sb.from('sg_games').select('code,phase,round,class_name').in('code', list.map(x => x.code)))).forEach(g => info[g.code] = g); } catch (e) {}
+  }
+  const ps = { lobby: '시작 전', invest: '투자 중', reveal: '결과 발표 중', final: '끝남' };
+  const rows = list.filter(x => info[x.code]).map(x => { const g = info[x.code];
+    return `<tr><td style="font-weight:800;font-size:18px">${esc(g.class_name)}</td><td class="muted">코드 ${g.code}</td>
+      <td>${g.phase === 'final' ? '🏁 끝남' : g.phase === 'lobby' ? '⏳ 시작 전' : `▶ ${year(g.round)}년 · ${ps[g.phase]}`}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn sm ${g.phase === 'final' ? 'ghost' : 'gold'}" data-open="${g.code}">${g.phase === 'final' ? '결과 보기' : '이어서 진행'}</button>
+      <button class="btn sm ghost" data-forget="${g.code}" title="목록에서만 지워요">✕</button></td></tr>`; }).join('');
+  app.innerHTML = topBar('<span class="pill">교사용</span>') + `<div class="wrap">
+    ${rows ? `<h2 style="margin-top:20px">📋 이 컴퓨터에서 진행한 게임</h2><div class="card"><table class="rank">${rows}</table>
+      <div class="muted" style="font-size:13px;margin-top:8px">반을 골라 누르면 그 반이 하던 곳부터 이어서 진행돼요. ✕는 이 목록에서만 지우고 기록은 남아요.</div></div>` : ''}
+    <div class="grid g2" style="margin-top:20px">
     <div class="card"><h1>🆕 새 게임 만들기</h1><div class="muted">반마다 하나씩 만들어 주세요.</div>
       <label class="l">반 이름</label><input class="f" id="nclass" placeholder="예: 3-1">
       <label class="l">교사 비밀번호 (4자 이상)</label><input class="f" id="npin" type="password" placeholder="진행할 때 필요해요">
@@ -588,21 +633,29 @@ function teacherLoginScreen() {
     <div class="card"><h1>▶️ 이어서 진행하기</h1><div class="muted">만들어 둔 게임을 다시 열어요.</div>
       <label class="l">게임 코드</label><input class="f" id="lcode" maxlength="4" style="text-transform:uppercase">
       <label class="l">교사 비밀번호</label><input class="f" id="lpin" type="password">
-      <button class="btn big" style="width:100%;margin-top:18px" id="lgo">불러오기</button></div>
+      <button class="btn big" style="width:100%;margin-top:18px" id="lgo">불러오기</button>
+      <div class="muted" style="font-size:13px;margin-top:8px">다른 컴퓨터에서 만든 게임은 코드와 비밀번호로 불러오세요.</div></div>
   </div><p style="text-align:center;margin-top:24px"><a href="?rank" class="muted">🌏 명예의 전당 보기</a></p></div>`;
   document.getElementById('ngo').onclick = async () => {
     const pin = document.getElementById('npin').value;
     try { const code = await rpc('sg_create_game', { p_class: document.getElementById('nclass').value, p_pin: pin }); await teacherLogin(code, pin); }
     catch (e) { toast(e.message, true); }
   };
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = async () => {
+    const s = list.find(x => x.code === b.dataset.open);
+    try { await teacherLogin(s.code, s.pin); } catch (e) { toast(e.message, true); }
+  });
+  document.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => {
+    localStorage.setItem('sg_teacher_games', JSON.stringify(savedGames().filter(x => x.code !== b.dataset.forget))); teacherLoginScreen();
+  });
   document.getElementById('lgo').onclick = async () => {
     try { await teacherLogin(document.getElementById('lcode').value, document.getElementById('lpin').value); } catch (e) { toast(e.message, true); }
   };
 }
 async function teacherLogin(code, pin) {
   const g = await rpc('sg_teacher_login', { p_code: code, p_pin: pin });
-  T.code = g.code; T.pin = pin; T.game = g; T.key = '';
-  localStorage.setItem('sg_teacher', JSON.stringify({ code: T.code, pin }));
+  T.code = g.code; T.pin = pin; T.game = g; T.key = ''; T.shown = {};
+  saveGame(g, pin);
   await teacherRefresh(true);
 }
 async function teacherRefresh(force) {
@@ -636,13 +689,13 @@ function teacherHeader() {
   return topBar(`<span class="pill">${esc(g.class_name)}</span><span class="pill gold">코드 ${g.code}</span>
     <span class="pill">${g.phase === 'lobby' ? '대기 중' : year(g.round) + '년 · ' + g.round + '/' + g.max_round}</span>
     <span class="pill" id="tcount">👥 ${T.players.length}명</span>
-    <button class="btn sm ghost" id="tmanage">학생 관리</button><button class="btn sm ghost" id="tout">나가기</button>`);
+    <button class="btn sm ghost" id="tmanage">학생 관리</button><button class="btn sm ghost" id="tout">반 목록</button>`);
 }
 function minutesSel() {
   return `<select class="f" id="tmin" style="width:auto;display:inline-block">${[2,3,4,5,7,10].map(m => `<option ${m === T.minutes ? 'selected' : ''} value="${m}">투자 시간 ${m}분</option>`).join('')}</select>`;
 }
 function bindTeacherCommon() {
-  document.getElementById('tout').onclick = () => { localStorage.removeItem('sg_teacher'); if (T.chan) { sb.removeChannel(T.chan); T.chan = null; } teacherLoginScreen(); };
+  document.getElementById('tout').onclick = () => teacherLoginScreen();
   document.getElementById('tmanage').onclick = teacherManage;
   const tm = document.getElementById('tmin'); if (tm) tm.onchange = () => T.minutes = +tm.value;
   const st = document.getElementById('tstart');
