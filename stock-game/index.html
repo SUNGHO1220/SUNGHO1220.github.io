@@ -595,7 +595,7 @@ async function studentFinal() {
 // =====================================================
 //                       교사
 // =====================================================
-const T = { code:null, pin:null, game:null, players:[], reveals:[], results:[], news:[], key:'', minutes:4, shown:{} };
+const T = { code:null, pin:null, game:null, players:[], reveals:[], results:[], news:[], key:'', minutes:5, shown:{} };
 
 async function teacherBoot() {
   document.body.classList.add('teacher');
@@ -682,6 +682,7 @@ function teacherTimer() {
   const left = Math.max(0, Math.round((new Date(T.game.deadline) - Date.now()) / 1000));
   el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   el.classList.toggle('late', left === 0);
+  if (left === 0 && !Music.ended) { Music.ended = true; Music.stop(2); setTimeout(() => Music.chime(), 600); }
 }
 function joinUrl() { return location.origin + location.pathname + '?code=' + T.code; }
 function teacherHeader() {
@@ -689,24 +690,30 @@ function teacherHeader() {
   return topBar(`<span class="pill">${esc(g.class_name)}</span><span class="pill gold">코드 ${g.code}</span>
     <span class="pill">${g.phase === 'lobby' ? '대기 중' : year(g.round) + '년 · ' + g.round + '/' + g.max_round}</span>
     <span class="pill" id="tcount">👥 ${T.players.length}명</span>
+    <button class="btn sm ghost" id="tmusic"></button><input type="range" id="tvol" min="0" max="1" step="0.05" value="${Music.vol}" title="음악 크기" style="width:80px">
     <button class="btn sm ghost" id="tmanage">학생 관리</button><button class="btn sm ghost" id="tout">반 목록</button>`);
 }
 function minutesSel() {
   return `<select class="f" id="tmin" style="width:auto;display:inline-block">${[2,3,4,5,7,10].map(m => `<option ${m === T.minutes ? 'selected' : ''} value="${m}">투자 시간 ${m}분</option>`).join('')}</select>`;
 }
 function bindTeacherCommon() {
-  document.getElementById('tout').onclick = () => teacherLoginScreen();
+  document.getElementById('tout').onclick = () => { Music.stop(0.5); teacherLoginScreen(); };
+  document.getElementById('tmusic').onclick = () => {
+    if (Music.on && Music.ctx && Music.ctx.state === 'suspended') { Music.ctx.resume().then(() => Music.updateBtn()); return; }
+    Music.init(); if (Music.on && !Music.playing && T.game.phase === 'invest' && !Music.ended) Music.start(); else Music.toggle(); };
+  document.getElementById('tvol').oninput = e => Music.setVol(+e.target.value);
+  Music.updateBtn();
   document.getElementById('tmanage').onclick = teacherManage;
   const tm = document.getElementById('tmin'); if (tm) tm.onchange = () => T.minutes = +tm.value;
   const st = document.getElementById('tstart');
-  if (st) st.onclick = async () => { st.disabled = true; try { await rpc('sg_teacher_start', { p_code: T.code, p_pin: T.pin, p_minutes: T.minutes }); await teacherRefresh(); } catch (e) { toast(e.message, true); st.disabled = false; } };
+  if (st) st.onclick = async () => { Music.init(); st.disabled = true; try { await rpc('sg_teacher_start', { p_code: T.code, p_pin: T.pin, p_minutes: T.minutes }); await teacherRefresh(); } catch (e) { toast(e.message, true); st.disabled = false; } };
   const tb = document.getElementById('tbreak');
-  if (tb) tb.onclick = async () => { tb.disabled = true; try { await rpc('sg_teacher_breaking', { p_code: T.code, p_pin: T.pin }); await teacherRefresh(); } catch (e) { toast(e.message, true); tb.disabled = false; } };
+  if (tb) tb.onclick = async () => { Music.alert(); tb.disabled = true; try { await rpc('sg_teacher_breaking', { p_code: T.code, p_pin: T.pin }); await teacherRefresh(); } catch (e) { toast(e.message, true); tb.disabled = false; } };
   const cl = document.getElementById('tclose');
   if (cl) cl.onclick = async () => {
     const n = T.players.filter(p => p.submitted_round === T.game.round).length;
     if (n < T.players.length && !confirm(`아직 ${T.players.length - n}명이 제출하지 않았어요. 제출하지 않은 학생의 돈은 모두 예금에 들어가요. 마감할까요?`)) return;
-    cl.disabled = true; try { await rpc('sg_teacher_close', { p_code: T.code, p_pin: T.pin }); await teacherRefresh(); } catch (e) { toast(e.message, true); cl.disabled = false; }
+    Music.stop(1.2); cl.disabled = true; try { await rpc('sg_teacher_close', { p_code: T.code, p_pin: T.pin }); await teacherRefresh(); } catch (e) { toast(e.message, true); cl.disabled = false; }
   };
 }
 function teacherLive() {
@@ -745,9 +752,11 @@ function teacherRender() {
         <button class="btn gold big" id="tclose" style="font-size:22px;padding:18px 34px">⏰ 마감하고 1년 보내기</button></div>
       <p class="muted" style="text-align:center">속보는 투자 시간 중간쯤 터뜨리면 학생들이 투자를 다시 고민하게 돼요.</p></div>`;
     teacherLive(); teacherTimer();
+    const left0 = g.deadline ? new Date(g.deadline) - Date.now() : 1;
+    if (left0 > 0) Music.start(); else Music.ended = true;
   } else if (g.phase === 'reveal' || g.phase === 'final') {
-    teacherReveal();
-  }
+    Music.stop(); teacherReveal();
+  } else Music.stop();
   bindTeacherCommon();
 }
 function rankTable(list, prevMap, limit) {
@@ -823,6 +832,87 @@ function teacherManage() {
     catch (e) { toast(e.message, true); }
   });
 }
+
+
+// =====================================================
+//     배경음악 (Web Audio로 직접 연주 — 저작권 걱정 없음)
+// =====================================================
+const Music = {
+  ctx:null, master:null, bus:null, timer:null, step:0, playing:false, ended:false,
+  on: localStorage.getItem('sg_music') !== 'off', vol: +(localStorage.getItem('sg_music_vol') || 0.5),
+  hz: m => 440 * Math.pow(2, (m - 69) / 12),
+  chords: [[48,52,55,59],[45,48,52,55],[41,45,48,52],[43,47,50,55]],   // Cmaj7 · Am7 · Fmaj7 · G
+  init() {
+    if (!this.ctx) {
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      const c = this.ctx = new C();
+      this.master = c.createGain(); this.master.gain.value = 0; this.master.connect(c.destination);
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.connect(this.master);
+      const dl = c.createDelay(); dl.delayTime.value = 0.42; const fb = c.createGain(); fb.gain.value = 0.32;
+      this.bus = c.createGain(); this.bus.connect(lp); this.bus.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(lp);
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  note(m, t, dur, type, peak, atk) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = this.hz(m);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + dur + 0.1);
+  },
+  tick() {
+    const c = this.ctx; if (!c || c.state !== 'running') return this.updateBtn(); const t = c.currentTime + 0.05;
+    const ch = this.chords[Math.floor(this.step / 8) % 4];
+    if (this.step % 8 === 0) {
+      ch.forEach(m => this.note(m, t, 6, 'sine', 0.05, 1.4));            // 부드러운 화음
+      this.note(ch[0] - 12, t, 5, 'triangle', 0.07, 0.3);                // 베이스
+    }
+    if (this.step % 2 === 0 || Math.random() < 0.35) {                    // 오르골 같은 멜로디
+      const m = ch[Math.floor(Math.random() * ch.length)] + 24 + (Math.random() < 0.3 ? 2 : 0);
+      this.note(m, t, 2.2, 'triangle', 0.045, 0.02);
+    }
+    this.step++;
+  },
+  fade(to, sec) {
+    if (!this.ctx) return; const g = this.master.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(to, t + sec);
+  },
+  start() {
+    this.ended = false;
+    if (!this.on || this.playing) return this.updateBtn();
+    this.init(); if (!this.ctx) return;
+    this.playing = true; this.step = 0; this.fade(this.vol, 2.5);
+    this.tick(); this.timer = setInterval(() => this.tick(), 650);
+    this.updateBtn();
+  },
+  stop(sec = 1.5) {
+    if (!this.playing) return this.updateBtn();
+    this.playing = false; this.fade(0, sec);
+    const tm = this.timer; setTimeout(() => clearInterval(tm), sec * 1000);
+    this.updateBtn();
+  },
+  chime() {                                        // 투자 시간 끝 알림
+    this.init(); if (!this.ctx || !this.on) return;
+    const t = this.ctx.currentTime + 0.05; this.master.gain.setValueAtTime(Math.max(this.vol, 0.4), t);
+    [76, 72, 79].forEach((m, i) => this.note(m, t + i * 0.35, 2.5, 'sine', 0.18, 0.01));
+  },
+  alert() {                                        // 속보 알림음
+    this.init(); if (!this.ctx || !this.on) return;
+    const t = this.ctx.currentTime + 0.05; if (!this.playing) this.master.gain.setValueAtTime(Math.max(this.vol, 0.4), t);
+    [72, 72, 79].forEach((m, i) => this.note(m, t + i * 0.16, 0.5, 'square', 0.05, 0.005));
+  },
+  toggle() {
+    this.on = !this.on; localStorage.setItem('sg_music', this.on ? 'on' : 'off');
+    if (this.on && T.game && T.game.phase === 'invest' && !this.ended) this.start(); else this.stop(0.5);
+    this.updateBtn();
+  },
+  setVol(v) { this.vol = v; localStorage.setItem('sg_music_vol', v); if (this.playing) this.fade(v, 0.3); },
+  updateBtn() {
+    const b = document.getElementById('tmusic'); if (!b) return;
+    const blocked = this.on && this.ctx && this.ctx.state === 'suspended';
+    b.textContent = !this.on ? '🔇 음악 꺼짐' : blocked ? '🎵 눌러서 음악 켜기' : '🎵 음악 켜짐';
+  }
+};
 
 // =====================================================
 //                   명예의 전당
