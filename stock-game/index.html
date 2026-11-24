@@ -106,6 +106,22 @@ label.l{display:block;font-size:13px;font-weight:700;color:var(--sub);margin:14p
 /* 공개 */
 .shock{background:linear-gradient(135deg,#b4233a,#e5304a);color:#fff;border-radius:var(--r);padding:26px;animation:shake .6s 1}
 .shock h2{margin:0 0 8px;font-size:26px}
+.twist{background:linear-gradient(135deg,#5b2bbf,#8b5cf6);color:#fff;border-radius:var(--r);padding:22px 26px}
+.twist h2{margin:0 0 6px;font-size:24px}
+.slides{position:relative;text-align:center}
+.slide{display:none;padding:10px 6px}
+.slide.on{display:block;animation:pop .4s forwards}
+.slide .se{font-size:64px;line-height:1.1}
+.slide h2{font-size:28px;margin:12px 0}
+.slide p,.slide li{font-size:18px;line-height:1.75;color:#333a50}
+.slide ol,.slide ul{text-align:left;display:inline-block;margin:0;padding-left:22px}
+.slide .ex{display:inline-flex;gap:12px;align-items:center;background:#f4f6fb;border-radius:14px;padding:12px 18px;font-weight:800;font-size:18px;margin-top:8px}
+.dots{display:flex;gap:6px;justify-content:center;margin:14px 0}
+.dots i{width:9px;height:9px;border-radius:50%;background:#d7dae3}
+.dots i.on{background:var(--navy);width:22px;border-radius:9px}
+body.teacher .slide p,body.teacher .slide li{font-size:24px}
+body.teacher .slide h2{font-size:38px}
+body.teacher .slide .se{font-size:90px}
 @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
 .rv{display:grid;grid-template-columns:200px 1fr 90px;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
 .rv:last-child{border:0}
@@ -224,7 +240,7 @@ function newsCard(n) {
   const k = n.tag === '루머' ? 'rumor' : n.tag === '경고' ? 'warn' : n.tag === '상장' ? 'ipo' : n.tag === '속보' ? 'breaking' : '';
   return `<div class="card news ${k}"><span class="tag">${esc(n.tag)}</span><div class="t">${esc(n.title)}</div><div class="b">${esc(n.body)}</div></div>`;
 }
-const curNews = (list, r) => { const a = list.filter(n => n.round === r); return [...a.filter(n => n.tag === '속보'), ...a.filter(n => n.tag !== '속보')]; };
+const curNews = (list, r, seed) => { const a = list.filter(n => n.round === r); return [...a.filter(n => n.tag === '속보'), ...seededOrder(a.filter(n => n.tag !== '속보'), (seed || '') + r)]; };
 function roundMvp(results, players, r) {
   let best = null;
   results.filter(x => x.round === r).forEach(x => { const g = x.value_after / x.value_before - 1; if (!best || g > best.g) best = { g, id: x.player_id }; });
@@ -239,6 +255,53 @@ function quizAnswerBox(qz) {
   return `<div class="card quiz"><b>📝 올해의 경제 퀴즈 정답</b><div class="qq">${esc(qz.question)}</div>
     ${qz.options.map((o, i) => `<div class="qo ${i + 1 === qz.answer ? 'right' : ''}">${i + 1}. ${esc(o)}</div>`).join('')}
     <div class="muted" style="line-height:1.6">${esc(qz.explain)}</div></div>`;
+}
+const INTRO = [
+  { e:'📈', t:'미래경제 5년에 온 걸 환영해요!', b:`<p>여러분은 지금부터 <b>투자자</b>예요.<br>가상의 돈 <b>1,000만원</b>으로 2027년부터 2031년까지<br>5년 동안 회사에 투자해 돈을 불려 봐요.</p><p class="muted">※ 진짜 돈이 아니에요. 경제가 어떻게 움직이는지 배우는 게임이에요.</p>` },
+  { e:'🧩', t:'주식이 뭐예요?', b:`<p>주식은 회사를 아주 잘게 나눈 <b>조각</b>이에요.<br>주식을 사면 그만큼 그 회사의 <b>주인(주주)</b>이 돼요.</p><p>회사가 돈을 잘 벌면 주식값(주가)이 <b class="up">올라가고 ▲</b><br>회사가 어려워지면 <b class="down">내려가요 ▼</b></p><p class="muted">우리나라 주식 화면에서는 <b class="up">빨간색 = 오름</b>, <b class="down">파란색 = 내림</b>이에요.</p>` },
+  { e:'📰', t:'주가는 왜 움직일까요?', b:`<p>뉴스가 나오면 사람들이 "이 회사 앞으로 잘되겠다!" 혹은 "힘들겠다…" 하고 생각해요.<br>그 생각이 모여 주가가 움직여요.</p><div class="ex">☀️ 역대급 폭염 예고 → 🍦 아이스크림 회사 <span class="up">▲</span> · 🔌 전기 회사 <span class="up">▲</span></div><p style="margin-top:14px">뉴스 하나가 <b>여러 회사</b>에 영향을 줄 수 있어요.<br>하지만 <b>[출처 불명]</b> 소문은 틀릴 수도 있어요!</p>` },
+  { e:'🎮', t:'게임은 이렇게 해요', b:`<ol><li>매년 <b>뉴스</b>를 꼼꼼히 읽어요.</li><li>가진 돈을 <b>만원 단위</b>로 여러 회사에 나눠 투자해요.</li><li>투자하지 않은 돈은 <b>예금</b>에 들어가 1년에 3%씩 안전하게 불어나요.</li><li>시간이 끝나면 <b>1년이 흐르고</b> 주가가 공개돼요.</li><li>바뀐 돈으로 다음 해에 다시 투자! 이걸 <b>5번</b> 반복해요.</li></ol>` },
+  { e:'⚡', t:'깜짝 요소들', b:`<ul><li><b>📢 속보</b> — 투자 시간 중간에 갑자기 터져요. 끝까지 화면을 보세요!</li><li><b>🎲 반전 사건</b> — 결과 발표 때 아무도 몰랐던 일이 일어나기도 해요. 반마다 달라요!</li><li><b>📝 경제 퀴즈</b> — 매년 한 문제, 맞히면 보너스 30만원!</li><li><b>🃏 찬스 카드</b> — 손실 보험, 애널리스트 리포트 (게임에서 한 번씩)</li></ul>` },
+  { e:'🏆', t:'이기는 비결', b:`<ul><li>뉴스와 회사를 <b>연결해서</b> 생각해 보기</li><li>한 회사에 몽땅 넣지 말고 <b>나눠서 투자</b>하기 (분산투자)</li><li>소문은 한 번 더 <b>의심</b>해 보기</li></ul><p>5년 뒤 돈이 가장 많은 사람이 우승!<br>분산투자왕, 역발상 투자자, 경제 퀴즈왕 같은 <b>특별상</b>도 있어요.</p><p class="muted">친구가 다른 반에서 들은 정답? 반마다 속보와 반전 사건이 달라서 소용없어요 😉</p>` },
+];
+function slidesHtml(id) {
+  return `<div class="slides" id="${id}">${INTRO.map((s, i) => `<div class="slide ${i ? '' : 'on'}"><div class="se">${s.e}</div><h2>${s.t}</h2>${s.b}</div>`).join('')}
+    <div class="dots">${INTRO.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
+    <div style="display:flex;gap:10px;justify-content:center"><button class="btn ghost" data-sl="-1">◀ 이전</button><button class="btn gold" data-sl="1">다음 ▶</button></div></div>`;
+}
+function bindSlides(id, onEnd) {
+  const root = document.getElementById(id); if (!root) return; let i = 0;
+  const show = n => {
+    if (n >= INTRO.length) { if (onEnd) onEnd(); return; }
+    i = Math.max(0, n);
+    root.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === i));
+    root.querySelectorAll('.dots i').forEach((d, k) => d.classList.toggle('on', k === i));
+    root.querySelector('[data-sl="1"]').textContent = i === INTRO.length - 1 ? (onEnd ? '닫기 ✓' : '처음으로') : '다음 ▶';
+  };
+  root.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => { const n = i + +b.dataset.sl; show(!onEnd && n >= INTRO.length ? 0 : n); });
+  root._key = e => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); root.querySelector('[data-sl="1"]').click(); } if (e.key === 'ArrowLeft') show(i - 1); };
+  return root;
+}
+function showIntroModal() {
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="card" style="max-width:1000px;padding:34px">${slidesHtml('isl')}</div>`;
+  document.body.appendChild(m);
+  const close = () => { document.removeEventListener('keydown', root._key); m.remove(); };
+  const root = bindSlides('isl', close);
+  document.addEventListener('keydown', root._key);
+  m.onclick = e => { if (e.target === m) close(); };
+}
+function seededOrder(list, seedStr) {
+  let s = 0; for (const ch of String(seedStr)) s = (s * 31 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  return list.map(x => [rnd(), x]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+}
+function twistBox(rv) {
+  if (!rv) return '';
+  let out = '';
+  if (rv.twist_title) out += `<div class="twist" style="margin:14px 0"><h2>${esc(rv.twist_title)}</h2><div style="font-size:17px">${esc(rv.twist_body || '')}</div><div style="font-size:13px;opacity:.8;margin-top:6px">이 사건은 우리 반에만 일어났어요!</div></div>`;
+  if (rv.breaking_title && rv.breaking_announced === false) out += `<div class="card" style="margin:14px 0;border-left:5px solid var(--up)"><b>🤫 발표되지 않았던 속보</b><div style="margin-top:4px">${esc(rv.breaking_title)}</div></div>`;
+  return out;
 }
 function topBar(right) {
   return `<div class="top"><div class="logo">📈 미래경제 <b>5년</b></div><div class="sp"></div>${right || ''}</div>`;
@@ -397,18 +460,11 @@ async function studentRender() {
   const g = S.game;
   if (g.phase === 'lobby') {
     const ps = await loadPlayers(g.id);
-    app.innerHTML = studentHeader() + `<div class="wrap center"><div class="card" style="text-align:center;max-width:560px;width:100%">
+    app.innerHTML = studentHeader() + `<div class="wrap center"><div class="card" style="text-align:center;max-width:760px;width:100%">
       <div style="font-size:56px">⏳</div><h1>입장 완료!</h1>
       <p class="muted">선생님이 게임을 시작하면 2027년 뉴스가 나와요.<br>지금 <b>${ps.length}명</b>이 들어와 있어요.</p>
-      <div class="card" style="background:#f6f7fa;text-align:left;margin-top:16px"><b>🎮 게임 방법</b>
-      <ol class="muted" style="line-height:1.8;margin:8px 0 0;padding-left:20px">
-        <li>매년 뉴스를 읽고, 가진 돈을 여러 회사에 나눠 투자해요.</li>
-        <li>투자하지 않은 돈은 <b>예금(연 3%)</b>으로 안전하게 불어나요.</li>
-        <li>1년이 지나면 주가가 공개되고 내 돈이 바뀌어요.</li>
-        <li>찬스 카드 2장(손실 보험, 애널리스트 리포트)은 게임 전체에서 한 번씩만 쓸 수 있어요.</li>
-        <li>매년 <b>경제 퀴즈</b>를 맞히면 보너스 30만원!</li>
-        <li>투자 시간 중에 선생님이 <b>📢 속보</b>를 터뜨릴 수 있어요. 끝까지 집중!</li>
-        <li>5년 뒤 돈이 가장 많은 사람이 우승!</li></ol></div></div></div>`;
+      <div class="card" style="background:#f6f7fa;margin-top:16px">${slidesHtml('ssl')}</div></div></div>`;
+    bindSlides('ssl');
     return;
   }
   if (g.phase === 'invest') return studentInvest();
@@ -416,13 +472,13 @@ async function studentRender() {
   if (g.phase === 'final') return studentFinal();
 }
 
-function availCos() { return COMPANIES.filter(c => c.ipo_round <= S.game.round); }
+function availCos() { return seededOrder(COMPANIES.filter(c => c.ipo_round <= S.game.round), S.game.id); }
 function maxUnits() { return Math.floor(S.me.value / 10000); }
 function usedUnits() { return Object.values(S.alloc).reduce((s, v) => s + (v || 0), 0); }
 
 function studentInvest() {
   const g = S.game, r = g.round, used = S.me.cards_used || [];
-  const thisNews = curNews(S.news, r), oldNews = S.news.filter(n => n.round < r);
+  const thisNews = curNews(S.news, r, S.game.id), oldNews = S.news.filter(n => n.round < r);
   const cos = availCos().map(c => {
     const price = priceAfter(c.id, r - 1, S.reveals), last = effectOf(c.id, r - 1, S.reveals);
     const isNew = c.ipo_round === r && r > 1;
@@ -551,6 +607,7 @@ async function studentReveal() {
   app.innerHTML = studentHeader() + `<div class="wrap">
     <h1>📅 ${year(g.round)}년이 지났어요</h1>
     ${rv && rv.shock_title ? `<div class="shock" style="margin:14px 0"><h2>${esc(rv.shock_title)}</h2><div>${esc(rv.shock_body)}</div></div>` : ''}
+    ${twistBox(rv)}
     <div class="grid g2" style="margin-top:14px">
       <div class="card"><div class="muted" style="font-weight:700">내 자산</div>
         <div style="font-size:34px;font-weight:900;margin:6px 0">${man(S.me.value)}</div>
@@ -663,6 +720,7 @@ async function teacherRefresh(force) {
   T.game = g; T.players = ps;
   const key = gkey(g);
   if (force || key !== T.key) {
+    if (T.autoBroke && T.autoBroke !== g.round) T.autoBroke = 0;
     T.key = key;
     [T.reveals, T.results, T.news, T.quiz] = await Promise.all([loadReveals(g.id), loadResults(g.id), rpc('sg_news', { p_code: g.code }),
       g.phase === 'invest' ? rpc('sg_quiz', { p_code: g.code }) : null]);
@@ -682,6 +740,10 @@ function teacherTimer() {
   const left = Math.max(0, Math.round((new Date(T.game.deadline) - Date.now()) / 1000));
   el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   el.classList.toggle('late', left === 0);
+  const g = T.game, half = (T.minutes || 5) * 30;
+  if (left > 0 && left <= half && (g.breaking_round || 0) < g.round && !T.autoBroke) {
+    T.autoBroke = g.round; const tb = document.getElementById('tbreak'); if (tb && !tb.disabled) tb.click();
+  }
   if (left === 0 && !Music.ended) { Music.ended = true; Music.stop(2); setTimeout(() => Music.chime(), 600); }
 }
 function joinUrl() { return location.origin + location.pathname + '?code=' + T.code; }
@@ -735,11 +797,13 @@ function teacherRender() {
       <div class="muted" style="font-weight:700">게임 코드</div><div class="bigcode">${g.code}</div>
       <div style="margin-top:8px"><button class="btn sm ghost" id="tcopy">학생용 링크 복사</button></div></div>
       <h2>입장한 학생</h2><div class="card"><div class="chips" id="tchips"></div></div>
-      <div style="text-align:center;margin-top:24px">${minutesSel()} <button class="btn gold big" id="tstart">🚀 ${year(1)}년 시작!</button></div></div>`;
+      <div style="text-align:center;margin-top:24px"><button class="btn big" id="tintro" style="margin-right:10px">📖 게임 방법 소개</button>${minutesSel()} <button class="btn gold big" id="tstart">🚀 ${year(1)}년 시작!</button></div>
+      <p class="muted" style="text-align:center">게임 방법 소개는 프로젝터에 띄워 ◀ ▶ 키나 스페이스바로 넘기면 돼요. 학생 화면에도 같은 소개가 나와요.</p></div>`;
+    document.getElementById('tintro').onclick = showIntroModal;
     document.getElementById('tcopy').onclick = () => { navigator.clipboard.writeText(joinUrl()); toast('복사했어요: ' + joinUrl()); };
     teacherLive();
   } else if (g.phase === 'invest') {
-    const news = curNews(T.news, g.round); const broke = (g.breaking_round || 0) >= g.round;
+    const news = curNews(T.news, g.round, g.id); const broke = (g.breaking_round || 0) >= g.round;
     app.innerHTML = teacherHeader() + `<div class="wrap">
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><h1 style="font-size:36px">📰 ${year(g.round)}년 뉴스</h1><div class="sp" style="flex:1"></div>
         <div class="timer" id="ttimer"></div></div>
@@ -750,7 +814,7 @@ function teacherRender() {
       <div style="text-align:center;margin-top:24px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
         <button class="btn big" id="tbreak" ${broke ? 'disabled' : ''} style="background:var(--up)">${broke ? '📢 속보 발표함' : '📢 속보 발표하기'}</button>
         <button class="btn gold big" id="tclose" style="font-size:22px;padding:18px 34px">⏰ 마감하고 1년 보내기</button></div>
-      <p class="muted" style="text-align:center">속보는 투자 시간 중간쯤 터뜨리면 학생들이 투자를 다시 고민하게 돼요.</p></div>`;
+      <p class="muted" style="text-align:center">속보는 반마다 무작위로 정해져요. 투자 시간 중간쯤 터뜨려 주세요. 누르지 않으면 남은 시간이 절반쯤일 때 자동으로 발표돼요.</p></div>`;
     teacherLive(); teacherTimer();
     const left0 = g.deadline ? new Date(g.deadline) - Date.now() : 1;
     if (left0 > 0) Music.start(); else Music.ended = true;
@@ -774,7 +838,7 @@ function teacherReveal() {
   const sorted = T.players.slice().sort((a, b) => b.value - a.value);
   const effects = (rv ? rv.effects : []).slice().sort((a, b) => a.pct - b.pct);
   const maxAbs = Math.max(10, ...effects.map(e => Math.abs(e.pct)));
-  const base = animate ? (rv && rv.shock_title ? 3.2 : 1.6) : 0;
+  const base = animate ? 1.6 + (rv && rv.shock_title ? 1.6 : 0) + (rv && rv.twist_title ? 1.6 : 0) : 0;
   const d = s => animate ? `style="animation-delay:${s}s"` : 'style="opacity:1;animation:none"';
   const rows = effects.map((e, i) => {
     const w = Math.abs(e.pct) / maxAbs * 50;
@@ -789,6 +853,7 @@ function teacherReveal() {
     ${animate ? `<div class="passing" id="tpass">⏳ 1년이 흐르고 있습니다…</div>` : ''}
     <h1 class="${animate ? 'pop' : ''}" ${d(1)} style="font-size:36px">📅 ${year(g.round)}년 결과 발표</h1>
     ${rv && rv.shock_title ? `<div class="${animate ? 'pop' : ''}" ${d(1.6)}><div class="shock" style="margin:16px 0"><h2>${esc(rv.shock_title)}</h2><div style="font-size:18px">${esc(rv.shock_body)}</div></div></div>` : ''}
+    ${rv && (rv.twist_title || rv.breaking_announced === false) ? `<div class="${animate ? 'pop' : ''}" ${d(rv.shock_title ? 3.2 : 1.6)}>${twistBox(rv)}</div>` : ''}
     <div class="card" style="margin-top:14px">${rows}</div>
     <div class="${animate ? 'pop' : ''}" ${d(after)} style="margin-top:16px">${mvpBox(roundMvp(T.results, T.players, g.round), g.round)}</div>
     ${rv && rv.quiz ? `<div class="${animate ? 'pop' : ''}" ${d(after + .4)} style="margin-top:16px">${quizAnswerBox(rv.quiz)}</div>` : ''}
@@ -937,7 +1002,7 @@ async function rankBoot() {
     document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
   };
   app.innerHTML = topBar('<span class="pill">🌏 명예의 전당</span>') + `<div class="wrap"><h1>🌏 미래경제 5년 · 명예의 전당</h1>
-    <div class="muted">모든 반이 똑같은 뉴스와 주가로 플레이해서 공정하게 비교할 수 있어요. 끝난 게임 ${finals.length}개 · 참가 ${finP.length}명</div>
+    <div class="muted">모든 반이 같은 5년 이야기로 시작하지만, 반마다 속보·반전 사건·주가 흔들림이 달라요. 끝난 게임 ${finals.length}개 · 참가 ${finP.length}명</div>
     <div class="tabs"><button data-t="hall">🏆 개인 TOP 20</button><button data-t="class">🏫 반별 대결</button></div><div id="rbody"></div></div>`;
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => view(b.dataset.t));
   view('hall');
