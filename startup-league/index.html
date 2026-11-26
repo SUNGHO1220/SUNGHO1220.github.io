@@ -96,6 +96,9 @@ td.r,th.r{text-align:right}
 .qr{background:#fff;border:3px solid var(--ink);border-radius:14px;padding:8px;width:220px;height:220px}
 .spin{display:inline-block;animation:spin 1.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .hl{background:linear-gradient(transparent 60%,#ffe57a 60%)}
+.offer{background:linear-gradient(135deg,#fff3d6,#ffe1f0);border:2px solid var(--ink);border-radius:18px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px}
+.offer .tag{display:inline-block;background:#ff7eb6;color:#fff;font-weight:800;font-size:12px;padding:3px 10px;border-radius:99px;margin-bottom:8px}
+details summary{list-style:none}details summary::-webkit-details-marker{display:none}
 </style>
 </head>
 <body>
@@ -105,7 +108,7 @@ td.r,th.r{text-align:right}
 const CFG = {
   START: 500000, RENT: 50000, LOAN_MAX: 1000000, RATE: 0.05, TAX: 0.10,
   UPG_COST: 200000, QUAL_MAX: 3, QUAL_UNIT: 200,
-  FEST_COST: 50000, FEST_TH: 0.6, FEST_BOOST: 1.3, FEST_ROUNDS: [3, 5],
+  FEST_COST: 50000, SWITCH_COST: 100000, FEST_TH: 0.6, FEST_BOOST: 1.3, FEST_ROUNDS: [3, 5],
   BASE: 110, PRICE_MIN: 500, PRICE_MAX: 20000, QTY_MAX: 500,
 };
 const MENUS = {
@@ -133,6 +136,7 @@ const EVENTS = [
   { id: 15, emoji: '🛵', title: '배달앱 서비스 시작', desc: '배달앱 광고로 손님을 끌 수 있게 됐어요. 광고 효과 2배!', ad: 2 },
   { id: 16, emoji: '📰', title: '핫도그 위생 가짜뉴스', desc: '“핫도그 기름이 위험하다”는 확인 안 된 소문이 퍼졌어요.', mult: { hotdog: 0.6 } },
   { id: 17, emoji: '🧊', title: '얼음값 폭등', desc: '제빙기 고장 대란! 빙수 재료비가 크게 올랐어요.', cost: { bingsu: 1.5 } },
+  { id: 99, emoji: '🎄', title: '연말 대목 시즌!', desc: '마지막 달! 크리스마스와 연말 모임으로 거리가 사람으로 가득해요. 손님 +50%. 마지막 승부를 걸 때예요!', all: 1.5 },
   { id: 18, emoji: '🏷️', title: '가성비 열풍', desc: '“싼 게 최고!” 손님들이 가격을 꼼꼼히 비교해요. 가격에 아주 민감해졌어요.', elastic: 2.1 },
 ];
 const LUCK = [
@@ -148,23 +152,36 @@ function won(n) { n = Math.round(n || 0); return (n < 0 ? '-' : '') + Math.abs(n
 function shuffle(a, rnd = Math.random) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function eventById(id) { return EVENTS.find(e => e.id === id) || EVENTS[0]; }
 function pickEventOrder(n) {
-  // 금리 인상(12)은 대출이 생긴 뒤인 3라운드 이후에만
-  let ids = shuffle(EVENTS.map(e => e.id));
+  // 마지막 달은 항상 연말 대목. 금리 인상(12)은 3라운드 이후에만
+  let ids = shuffle(EVENTS.filter(e => e.id !== 99).map(e => e.id));
+  let sel = ids.slice(0, n - 1);
   for (let t = 0; t < 30; t++) {
-    const sel = ids.slice(0, n);
     const i12 = sel.indexOf(12);
-    if (i12 === -1 || i12 >= 2) return sel;
-    ids = shuffle(ids);
+    if (i12 === -1 || i12 >= 2) break;
+    ids = shuffle(ids); sel = ids.slice(0, n - 1);
   }
-  return ids.slice(0, n);
+  return [...sel, 99];
 }
+const OFFERS = [
+  { id: 'tv', emoji: '📺', title: 'TV 맛집 프로그램 섭외', desc: '출연료 20만원을 내면 50% 확률로 방송이 나가 이번 달 손님 ×2.5! 편집되면 돈만 날려요.', cost: 200000 },
+  { id: 'investor', emoji: '🤵', title: '투자자의 제안', desc: '지금 30만원을 받는 대신, 이번 달 이익(세전)의 50%를 투자자에게 줘요. 이익이 없으면 안 줘도 돼요.', cost: 0 },
+  { id: 'insurance', emoji: '🛡️', title: '손해 보험 가입', desc: '보험료 5만원. 이번 달 이익이 마이너스면 손해를 최대 30만원까지 보상해 줘요.', cost: 50000 },
+  { id: 'coupon', emoji: '🎟️', title: '반값 쿠폰 이벤트', desc: '이번 달 모든 손님에게 30% 할인! 손님은 2배로 늘지만 1개당 받는 돈은 줄어요.', cost: 0 },
+  { id: 'lottery', emoji: '🎰', title: '상가 번영회 복권', desc: '1만원짜리 복권! 5% 확률로 50만원 당첨. 대부분은 꽝이에요.', cost: 10000 },
+  { id: 'copurchase', emoji: '🤝', title: '재료 공동 구매', desc: '이웃 가게들과 재료를 함께 사서 재료비 25% 할인! 대신 이번 달은 광고를 할 수 없어요.', cost: 0 },
+  { id: 'delivery', emoji: '🛵', title: '배달 대행 계약', desc: '수수료 8만원을 내면 배달 손님이 생겨서 이번 달 손님 +40%.', cost: 80000 },
+  { id: 'recipe', emoji: '📜', title: '수상한 비밀 레시피', desc: '15만원에 전설의 레시피를 판대요. 50% 확률로 품질 +2단계, 50%는 가짜…', cost: 150000 },
+  { id: 'donation', emoji: '💝', title: '착한 가게 기부', desc: '5만원을 기부하면 “착한 가게” 소문이 나서 다음 달 손님 +25%.', cost: 50000 },
+];
+function offerById(id) { return OFFERS.find(o => o.id === id); }
+function pickOfferOrder(n) { const o = shuffle(OFFERS.map(x => x.id)); while (o.length < n) o.push(...shuffle(OFFERS.map(x => x.id))); return o.slice(0, n); }
 function unitCostOf(menu, quality, ev) { return Math.round(MENUS[menu].cost * ((ev.cost && ev.cost[menu]) || 1) + quality * CFG.QUAL_UNIT); }
 function clampInt(v, lo, hi) { v = Math.round(Number(v) || 0); return Math.max(lo, Math.min(hi, v)); }
 
 function autoDecision(p, ev) {
   const m = MENUS[p.menu];
   const last = p.last;
-  return { price: last ? last.price : m.ref, qty: last ? Math.max(30, Math.round(last.demand * 0.6)) : 60, ad: 0, borrow: 0, repay: 0, upgrade: false, festival: false, auto: true };
+  return { price: last ? last.price : m.ref, qty: last ? Math.max(30, Math.round(last.demand * 0.6)) : 60, ad: 0, borrow: 0, repay: 0, upgrade: false, festival: false, offer: false, menu: p.menu, auto: true };
 }
 
 function sanitize(d) {
@@ -174,14 +191,16 @@ function sanitize(d) {
     ad: clampInt(d.ad, 0, 500000),
     borrow: clampInt(d.borrow, 0, CFG.LOAN_MAX),
     repay: clampInt(d.repay, 0, 10000000),
-    upgrade: !!d.upgrade, festival: !!d.festival, auto: !!d.auto,
+    upgrade: !!d.upgrade, festival: !!d.festival, offer: !!d.offer, auto: !!d.auto,
+    menu: MENUS[d.menu] ? d.menu : null,
   };
 }
 
-// players: [{id,nickname,shop,menu,cash,loan,quality,last,history}]
+// players: [{id,cls,nickname,shop,menu,cash,loan,quality,last,history}]
 // decisions: {player_id: data}
-function computeRound(players, decisions, eventId, roundNo, rnd = Math.random) {
+function computeRound(players, decisions, eventId, roundNo, offerId, rnd = Math.random) {
   const ev = eventById(eventId);
+  const offer = offerId ? offerById(offerId) : null;
   const N = players.length;
   const isFest = CFG.FEST_ROUNDS.includes(roundNo);
   const rate = ev.rate || CFG.RATE;
@@ -192,106 +211,161 @@ function computeRound(players, decisions, eventId, roundNo, rnd = Math.random) {
     const raw = decisions[p.id];
     const d = sanitize(raw ? raw : autoDecision(p, ev));
     if (!raw) d.auto = true;
-    let cash = p.cash, loan = p.loan, q = p.quality;
+    let cash = p.cash, loan = p.loan, q = p.quality, menu = p.menu, switched = false;
     const borrow = Math.min(d.borrow, Math.max(0, CFG.LOAN_MAX - loan));
     cash += borrow; loan += borrow;
     const repay = Math.min(d.repay, loan, Math.max(0, cash));
     cash -= repay; loan -= repay;
+    if (d.menu && d.menu !== p.menu && cash >= CFG.SWITCH_COST) { cash -= CFG.SWITCH_COST; menu = d.menu; switched = true; }
     let upgraded = false;
     if (d.upgrade && q < CFG.QUAL_MAX && cash >= CFG.UPG_COST) { cash -= CFG.UPG_COST; q++; upgraded = true; }
     let fest = false;
     if (isFest && d.festival && cash >= CFG.FEST_COST) { cash -= CFG.FEST_COST; fest = true; }
+    // 특별 제안
+    let took = false, offerNote = null, dm = 1, costMul = 1, noAd = false, priceMul = 1, recipeWin = false;
+    if (offer && d.offer) {
+      if (offer.id === 'investor') { cash += 300000; took = true; }
+      else if (cash >= offer.cost) {
+        cash -= offer.cost; took = true;
+        if (offer.id === 'tv') { if (rnd() < 0.5) { dm *= 2.5; offerNote = '📺 방송 대박! 손님 ×2.5'; } else offerNote = '✂️ 편집돼서 방송에 안 나왔어요…'; }
+        if (offer.id === 'coupon') { dm *= 2; priceMul = 0.7; }
+        if (offer.id === 'delivery') dm *= 1.4;
+        if (offer.id === 'recipe') { if (rnd() < 0.5) { q = Math.min(CFG.QUAL_MAX, q + 2); recipeWin = true; offerNote = '📜 진짜 레시피였어요! 품질 +2'; } else offerNote = '📜 가짜 레시피였어요… 😭'; }
+      }
+      if (offer.id === 'copurchase') { took = true; costMul = 0.75; noAd = true; }
+    }
+    if (p.last && p.last.goodwill) dm *= 1.25;
     cash -= CFG.RENT;
-    const ad = Math.min(d.ad, Math.max(0, cash)); cash -= ad;
-    const uc = unitCostOf(p.menu, q, ev);
+    const ad = noAd ? 0 : Math.min(d.ad, Math.max(0, cash)); cash -= ad;
+    const uc = Math.round(unitCostOf(menu, q, ev) * costMul);
     const qty = Math.min(d.qty, Math.floor(Math.max(0, cash) / uc));
     cash -= qty * uc;
-    return { p, d, cash, loan, q, borrow, repay, upgraded, fest, ad, uc, qty };
+    return { p, d, cash, loan, q, menu, switched, borrow, repay, upgraded, fest, ad, uc, qty, took, offerNote, dm, priceMul, recipeWin };
   });
 
-  const contributors = st.filter(s => s.fest).length;
-  const festRate = isFest && N ? contributors / N : 0;
-  const festSuccess = isFest && festRate >= CFG.FEST_TH;
-  const fb = festSuccess ? CFG.FEST_BOOST : 1;
+  // 반별 축제 판정
+  const festByCls = {};
+  if (isFest) {
+    const grp = {};
+    st.forEach(s => { const c = s.p.cls || 1; (grp[c] ||= { n: 0, y: 0 }); grp[c].n++; if (s.fest) grp[c].y++; });
+    Object.entries(grp).forEach(([c, g]) => { festByCls[c] = { n: g.n, y: g.y, rate: Math.round(g.y / g.n * 100), success: g.y / g.n >= CFG.FEST_TH }; });
+  }
 
   // 행운 카드
-  const k = N ? Math.max(1, Math.round(N * 0.12)) : 0;
-  const luckIdx = shuffle(st.map((_, i) => i), rnd).slice(0, k);
-  luckIdx.forEach(i => {
+  const k = N ? Math.max(1, Math.round(N * (N > 60 ? 0.08 : 0.12))) : 0;
+  shuffle(st.map((_, i) => i), rnd).slice(0, k).forEach(i => {
     const good = rnd() < 0.72;
     const pool = LUCK.filter(c => c.good === good);
     st[i].luck = pool[Math.floor(rnd() * pool.length)];
   });
 
-  // 수요 계산
+  // 수요 계산 (학년 전체 하나의 시장)
   st.forEach(s => {
-    const m = MENUS[s.p.menu];
-    const mm = (ev.mult && ev.mult[s.p.menu]) || 1;
+    const m = MENUS[s.menu];
+    const mm = (ev.mult && ev.mult[s.menu]) || 1;
+    s.price = Math.round(s.d.price * s.priceMul);
     const pf = Math.pow(m.ref / s.d.price, elastic);
     const af = 1 + 0.45 * Math.log(1 + s.ad / 30000) * adBoost;
     const qf = 1 + 0.15 * s.q * qualBoost;
+    s.fb = isFest && festByCls[s.p.cls || 1]?.success ? CFG.FEST_BOOST : 1;
     const noise = 0.92 + rnd() * 0.16;
-    s.raw = CFG.BASE * pf * af * qf * all * mm * fb * noise;
+    s.raw = CFG.BASE * pf * af * qf * all * mm * s.fb * noise;
   });
   const menuCount = {};
-  st.forEach(s => { menuCount[s.p.menu] = (menuCount[s.p.menu] || 0) + 1; });
+  st.forEach(s => { menuCount[s.menu] = (menuCount[s.menu] || 0) + 1; });
   Object.keys(menuCount).forEach(menu => {
-    const group = st.filter(s => s.p.menu === menu);
+    const group = st.filter(s => s.menu === menu);
     const mm = (ev.mult && ev.mult[menu]) || 1;
-    const cap = (100 * N / 5 + 45 * group.length) * all * mm * fb;
+    const avgFb = group.reduce((a, s) => a + s.fb, 0) / group.length;
+    const cap = (100 * N / 5 + 45 * group.length) * all * mm * avgFb;
     const sum = group.reduce((a, s) => a + s.raw, 0);
     const f = sum > cap ? cap / sum : 1;
     group.forEach(s => { s.capped = f < 1; s.raw *= f; });
   });
 
   const results = st.map(s => {
-    let qty = s.qty, spoiled = 0, lm = 1;
-    if (s.luck) { if (s.luck.spoil) { spoiled = Math.round(qty * s.luck.spoil); qty -= spoiled; } if (s.luck.mult) lm = s.luck.mult; }
+    let qty = s.qty, spoiled = 0, lm = s.dm;
+    if (s.luck) { if (s.luck.spoil) { spoiled = Math.round(qty * s.luck.spoil); qty -= spoiled; } if (s.luck.mult) lm *= s.luck.mult; }
     const demand = Math.max(0, Math.round(s.raw * lm));
     const sales = Math.min(demand, qty);
-    const revenue = sales * s.d.price;
+    const revenue = sales * s.price;
     let cash = s.cash + revenue;
     const interest = Math.round(s.loan * rate);
     const goods = s.qty * s.uc;
-    const pre = revenue - goods - s.ad - CFG.RENT - interest - (s.fest ? CFG.FEST_COST : 0);
+    const offerCost = s.took && offer && offer.id !== 'investor' && offer.id !== 'copurchase' ? offer.cost : 0;
+    let pre = revenue - goods - s.ad - CFG.RENT - interest - (s.fest ? CFG.FEST_COST : 0) - (s.switched ? CFG.SWITCH_COST : 0) - offerCost;
+    let extra = 0, offerNote = s.offerNote;
+    if (s.took && offer) {
+      if (offer.id === 'investor') { const share = pre > 0 ? Math.round(pre * 0.5) : 0; extra = 300000 - share; offerNote = `🤵 30만원 받고 이익의 절반 ${won(share)} 지급`; }
+      if (offer.id === 'insurance') { if (pre < 0) { extra = Math.min(-pre, 300000); offerNote = `🛡️ 보험금 ${won(extra)} 받았어요!`; } else offerNote = '🛡️ 다행히 보험금 받을 일이 없었어요'; }
+      if (offer.id === 'lottery') { if (rnd() < 0.05) { extra = 500000; offerNote = '🎰 복권 당첨!!! +50만원'; } else offerNote = '🎰 꽝…'; }
+      if (offer.id === 'coupon') offerNote = '🎟️ 반값 쿠폰으로 손님 2배!';
+      if (offer.id === 'copurchase') offerNote = '🤝 공동 구매로 재료비 25% 절약';
+      if (offer.id === 'delivery') offerNote = '🛵 배달 손님 +40%';
+      if (offer.id === 'donation') offerNote = '💝 다음 달 “착한 가게” 효과 +25%';
+    }
+    // investor: 30만원은 이미 cash에 들어갔으니 지분만 차감
+    if (s.took && offer && offer.id === 'investor') cash -= (300000 - extra);
+    else cash += extra;
+    pre += extra;
     const tax = pre > 0 ? Math.round(pre * CFG.TAX) : 0;
     cash -= interest + tax;
     let loan = s.loan, emergency = 0;
     if (cash < 0) { emergency = -cash; loan += emergency; cash = 0; }
     const profit = pre - tax;
     const last = {
-      round: roundNo, eventId, menu: s.p.menu, price: s.d.price, qty: s.qty, demand, sales,
+      round: roundNo, eventId, offerId: offerId || null, cls: s.p.cls || 1, menu: s.menu, switched: s.switched,
+      price: s.price, listPrice: s.d.price, qty: s.qty, demand, sales,
       leftover: qty - sales, spoiled, missed: Math.max(0, demand - qty), unitCost: s.uc,
       revenue, goods, ad: s.ad, rent: CFG.RENT, interest, tax, profit,
       upgraded: s.upgraded, fest: s.fest, borrow: s.borrow, repay: s.repay, emergency,
+      offer: s.took, offerNote, offerCost, offerExtra: extra, goodwill: !!(s.took && offer && offer.id === 'donation'),
       luck: s.luck ? s.luck.id : null, auto: s.d.auto, capped: !!s.capped,
       cash, loan, quality: s.q, net: cash - loan,
     };
-    return { id: s.p.id, cash, loan, quality: s.q, last };
+    return { id: s.p.id, cash, loan, quality: s.q, menu: s.menu, last };
   });
 
-  // 반 내 순위
-  const sorted = results.slice().sort((a, b) => b.last.net - a.last.net);
-  sorted.forEach((r, i) => { r.last.rank = i + 1; r.last.of = N; });
+  // 순위 (학년 전체 / 반 내)
+  results.slice().sort((a, b) => b.last.net - a.last.net).forEach((r, i) => { r.last.rank = i + 1; r.last.of = N; });
+  const byCls = {};
+  results.forEach(r => (byCls[r.last.cls] ||= []).push(r));
+  Object.values(byCls).forEach(g => g.sort((a, b) => b.last.net - a.last.net).forEach((r, i) => { r.last.crank = i + 1; r.last.cof = g.length; }));
 
   const byId = Object.fromEntries(players.map(p => [p.id, p]));
   const menuStats = {};
   Object.keys(MENUS).forEach(mk => {
-    const g = results.filter(r => byId[r.id].menu === mk);
+    const g = results.filter(r => r.menu === mk);
     if (!g.length) return;
     menuStats[mk] = {
       n: g.length,
       avgPrice: Math.round(g.reduce((a, r) => a + r.last.price, 0) / g.length),
       avgSales: Math.round(g.reduce((a, r) => a + r.last.sales, 0) / g.length),
       avgDemand: Math.round(g.reduce((a, r) => a + r.last.demand, 0) / g.length),
+      avgProfit: Math.round(g.reduce((a, r) => a + r.last.profit, 0) / g.length),
     };
   });
+  const classes = Object.entries(byCls).map(([c, g]) => ({
+    cls: +c, n: g.length,
+    avgNet: Math.round(g.reduce((a, r) => a + r.last.net, 0) / g.length),
+    avgProfit: Math.round(g.reduce((a, r) => a + r.last.profit, 0) / g.length),
+    submit: Math.round(g.filter(r => !r.last.auto).length / g.length * 100),
+    fest: festByCls[c] || null,
+  })).sort((a, b) => b.avgNet - a.avgNet);
+  const prevRank = {};
+  const mini = r => ({ cls: r.last.cls, nickname: byId[r.id].nickname, shop: byId[r.id].shop, menu: r.menu });
+  const sortedP = results.slice().sort((a, b) => b.last.profit - a.last.profit);
+  const tookN = results.filter(r => r.last.offer).length;
   const reveal = {
-    round: roundNo, eventId,
-    festival: isFest ? { rate: Math.round(festRate * 100), success: festSuccess, n: contributors } : null,
-    luck: results.filter(r => r.last.luck).map(r => ({ nickname: byId[r.id].nickname, shop: byId[r.id].shop, menu: byId[r.id].menu, luck: r.last.luck })),
-    top: results.slice().sort((a, b) => b.last.profit - a.last.profit).slice(0, 5)
-      .map(r => ({ nickname: byId[r.id].nickname, shop: byId[r.id].shop, menu: byId[r.id].menu, profit: r.last.profit })),
+    round: roundNo, eventId, offerId: offerId || null,
+    offerStat: offer ? { took: tookN, rate: N ? Math.round(tookN / N * 100) : 0,
+      hits: results.filter(r => r.last.offer && /대박|진짜|당첨/.test(r.last.offerNote || '')).slice(0, 6).map(r => ({ ...mini(r), note: r.last.offerNote })) } : null,
+    classes,
+    luck: results.filter(r => r.last.luck).slice(0, 12).map(r => ({ ...mini(r), luck: r.last.luck })),
+    luckTotal: results.filter(r => r.last.luck).length,
+    top: sortedP.slice(0, 5).map(r => ({ ...mini(r), profit: r.last.profit })),
+    worst: sortedP.length > 5 ? { ...mini(sortedP[sortedP.length - 1]), profit: sortedP[sortedP.length - 1].last.profit } : null,
+    switched: results.filter(r => r.last.switched).length,
     menuStats,
     avgNet: N ? Math.round(results.reduce((a, r) => a + r.last.net, 0) / N) : 0,
     avgProfit: N ? Math.round(results.reduce((a, r) => a + r.last.profit, 0) / N) : 0,
@@ -325,7 +399,7 @@ function computeBadges(players) {
   return out;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { CFG, MENUS, EVENTS, LUCK, computeRound, computeBadges, pickEventOrder, unitCostOf, won };
+if (typeof module !== 'undefined' && module.exports) module.exports = { CFG, MENUS, EVENTS, LUCK, OFFERS, pickOfferOrder, computeRound, computeBadges, pickEventOrder, unitCostOf, won };
 
 </script>
 <script>
@@ -338,13 +412,15 @@ const sb = supabase.createClient(SB_URL, SB_KEY);
 const $ = s => document.querySelector(s);
 const app = $('#app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const man = n => { n = Math.round(n || 0); const a = Math.abs(n); const s = a >= 10000 ? (a / 10000).toFixed(a % 10000 === 0 ? 0 : 1).replace(/\.0$/, '') + '만원' : a.toLocaleString() + '원'; return (n < 0 ? '-' : '') + s; };
+const man = n => { n = Math.round(n || 0); const a = Math.abs(n); const s = a >= 10000 ? (a / 10000).toFixed(1).replace(/\.0$/, '') + '만원' : a.toLocaleString() + '원'; return (n < 0 ? '-' : '') + s; };
 function toast(msg, ms = 2500) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 async function rpc(fn, args) { const { data, error } = await sb.rpc(fn, args); if (error) throw new Error(error.message); return data; }
 const params = new URLSearchParams(location.search);
 const joinUrl = code => location.origin + location.pathname + '?code=' + code;
 let pollTimer = null;
-function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+function stopPoll() { if (pollTimer) clearTimeout(pollTimer); pollTimer = null; }
+const MEDAL = ['🥇', '🥈', '🥉'];
+const who = x => `${x.cls}반 ${esc(x.nickname)}`;
 
 function eventEffects(ev) {
   const out = [];
@@ -362,31 +438,36 @@ function eventCard(ev, round, total) {
     <div class="row"><div class="em">${ev.emoji}</div><div class="grow"><h2>${esc(ev.title)}</h2><p>${esc(ev.desc)}</p></div></div>
     <div class="effects">${eventEffects(ev)}</div></div>`;
 }
+function offerCard(o, big) {
+  if (!o) return '';
+  return `<div class="offer rise"><span class="tag">🎁 이달의 특별 제안 (선택)</span>
+    <div class="row"><div style="font-size:${big ? 56 : 40}px">${o.emoji}</div><div class="grow"><h2 style="margin:0 0 4px">${esc(o.title)}</h2><div style="line-height:1.5">${esc(o.desc)}</div></div></div></div>`;
+}
 const RULES = `
 <h2>🚚 학교 앞 창업 리그 규칙</h2>
 <ol class="rules">
-<li>여러분은 학교 앞 푸드트럭 <b>사장님</b>! 시작 자금 <b>50만원</b>으로 가게를 운영해요.</li>
-<li>매달 뉴스를 보고 <b>판매 가격 · 준비 수량 · 광고비</b>를 정해요. 같은 반 친구들이 같은 동네의 경쟁자예요.</li>
-<li>가격이 비싸면 손님이 줄고, 너무 싸면 남는 게 없어요. 준비한 재료가 남으면 <b>모두 버려요</b>(손해). 모자라면 손님을 놓쳐요.</li>
-<li>같은 메뉴를 고른 친구가 많으면 손님을 <b>나눠 가져요</b>. 혼자만의 메뉴는 유리할 수 있어요!</li>
+<li>여러분은 학교 앞 푸드트럭 <b>사장님</b>! 시작 자금 <b>50만원</b>으로 가게를 운영해요. <b>학년 전체</b>가 같은 거리에서 장사하는 경쟁자예요.</li>
+<li>매달 뉴스를 보고 <b>판매 가격 · 준비 수량 · 광고비</b>를 정해요.</li>
+<li>가격이 비싸면 손님이 줄고, 너무 싸면 남는 게 없어요. 남은 재료는 <b>모두 버려요</b>. 모자라면 손님을 놓쳐요.</li>
+<li>같은 메뉴를 고른 가게가 많으면 손님을 <b>나눠 가져요</b>. 🔄 <b>메뉴 변경</b>(10만원)으로 뉴스에 맞춰 갈아탈 수 있어요!</li>
+<li>🎁 매달 <b>특별 제안</b>이 하나씩 와요. TV 출연, 투자자, 복권… 받을지 말지는 사장님 마음!</li>
 <li>매달 임대료 5만원, 이익의 10%는 세금으로 나가요.</li>
-<li>🏦 <b>대출</b>: 최대 100만원까지 빌릴 수 있지만, 매달 대출 잔액의 5% 이자가 나가요.</li>
-<li>⭐ <b>설비 투자</b>(20만원): 품질이 올라 손님이 늘지만, 재료비도 개당 200원 올라요. 최대 3단계.</li>
-<li>🎪 <b>3월·5월 축제 부스 투표</b>: 5만원씩 내서 반 친구 <b>60% 이상</b>이 참여하면 그달 반 전체 손님 +30%! 안 내고 혜택만 받을 수도 있지만… 모두가 그러면 실패해요.</li>
-<li>🍀 매달 몇 명에게 <b>행운 카드</b>(또는 불운 카드)가 찾아와요.</li>
-<li>🏆 최종 점수 = <b>현금 − 대출</b>(순자산). 반 순위는 <b>1인당 평균 순자산</b>으로 다른 반과 겨뤄요!</li>
+<li>🏦 <b>대출</b>: 최대 100만원. 매달 대출 잔액의 5% 이자가 나가요.</li>
+<li>⭐ <b>설비 투자</b>(20만원): 손님 +15%, 대신 원가 +200원. 최대 3단계.</li>
+<li>🎪 <b>3월·5월 축제 부스</b>: 5만원씩 내서 <b>우리 반 60% 이상</b>이 참여하면 그달 우리 반 전체 손님 +30%!</li>
+<li>🎄 <b>마지막 달은 연말 대목</b>! 손님이 50% 늘어나요. 역전의 기회!</li>
+<li>🏆 개인 점수 = <b>현금 − 대출</b>(순자산). <b>반 순위는 1인당 평균 순자산</b>으로 겨뤄요. 우리 반을 위해 모두가 끝까지 참여해야 해요!</li>
 </ol>`;
 function showRules() { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="card">${RULES}<button class="btn full" onclick="this.closest('.modal').remove()">알겠어요!</button></div>`; document.body.appendChild(m); }
 
-// ===== 시작 화면 =====
 function landing() {
   stopPoll();
   app.innerHTML = `
   <div class="brand">🚚 학교 앞 창업 리그 <small>${SEASON}</small></div>
   <div class="card center"><div style="font-size:72px">🌶️🍔🍧🌭🧇</div>
-    <h1>우리 반 푸드트럭 거리에 오신 걸 환영해요!</h1>
+    <h1>푸드트럭 거리에 오신 걸 환영해요!</h1>
     <p class="muted">선생님이 알려준 4자리 코드를 입력하세요.</p>
-    <input id="code" maxlength="4" placeholder="게임 코드 (예: AB3K)" style="text-align:center;font-size:28px;font-weight:900;letter-spacing:.2em;text-transform:uppercase">
+    <input id="code" maxlength="4" placeholder="게임 코드" style="text-align:center;font-size:28px;font-weight:900;letter-spacing:.2em;text-transform:uppercase">
     <div style="height:12px"></div>
     <button class="btn big full" onclick="location.href='?code='+document.getElementById('code').value.trim().toUpperCase()">참가하기</button>
   </div>
@@ -396,37 +477,36 @@ function landing() {
 // =====================================================================
 // ===== 학생 화면 =====
 // =====================================================================
-const S = { code: null, game: null, me: null, auth: null, sig: '', draft: null, submitted: false };
+const S = { code: null, game: null, me: null, auth: null, sig: '', draft: null, submitted: false, fails: 0 };
 
 async function studentStart(code) {
   document.body.classList.add('mobile');
   S.code = code.toUpperCase();
-  const { data: g } = await sb.from('bl_games').select('*').eq('code', S.code).maybeSingle();
-  if (!g) { app.innerHTML = `<div class="card center"><h2>😢 코드를 찾을 수 없어요</h2><p class="muted">코드 ${esc(S.code)}를 다시 확인해 주세요.</p><button class="btn" onclick="location.href='?'">다시 입력</button></div>`; return; }
-  S.game = g;
   try { S.auth = JSON.parse(localStorage.getItem('bl_' + S.code) || 'null'); } catch (e) { S.auth = null; }
   if (S.auth) {
-    const { data: me } = await sb.from('bl_players').select('*').eq('id', S.auth.player_id).maybeSingle();
-    if (me) { S.me = me; return sLoop(); }
+    const st = await rpc('bl_state', { p_player: S.auth.player_id, p_key: S.auth.key }).catch(() => null);
+    if (st) { S.game = st.game; S.me = st.me; return sLoop(); }
     localStorage.removeItem('bl_' + S.code); S.auth = null;
   }
-  sJoinForm();
+  const { data: g } = await sb.from('bl_games').select('*').eq('code', S.code).maybeSingle();
+  if (!g) { app.innerHTML = `<div class="card center"><h2>😢 코드를 찾을 수 없어요</h2><p class="muted">코드 ${esc(S.code)}를 다시 확인해 주세요.</p><button class="btn" onclick="location.href='?'">다시 입력</button></div>`; return; }
+  S.game = g; sJoinForm();
 }
 
 function sJoinForm() {
-  let menu = null;
+  let menu = null; const g = S.game;
   app.innerHTML = `
-  <div class="brand">🚚 창업 리그 <small>${esc(S.game.class_name)}</small></div>
+  <div class="brand">🚚 창업 리그 <small>${esc(g.class_name)}</small></div>
   <div class="card">
     <h2>내 푸드트럭 차리기</h2>
     <div class="grid g2">
+      <div><label>반</label><select id="cls"><option value="">선택</option>${Array.from({ length: g.class_count }, (_, i) => `<option value="${i + 1}">${i + 1}반</option>`).join('')}</select></div>
       <div><label>번호</label><input id="num" type="number" inputmode="numeric" min="1" max="40" placeholder="예: 7"></div>
-      <div><label>별명</label><input id="nick" maxlength="12" placeholder="예: 떡볶이장인"></div>
     </div>
+    <label>별명</label><input id="nick" maxlength="12" placeholder="예: 떡볶이장인">
     <label>가게 이름</label><input id="shop" maxlength="14" placeholder="예: 매운맛 천국">
-    <label>메뉴 고르기 <span class="muted">(게임 내내 바꿀 수 없어요!)</span></label>
+    <label>첫 메뉴 고르기 <span class="muted">(나중에 10만원 내고 바꿀 수 있어요)</span></label>
     <div class="menuPick">${Object.entries(MENUS).map(([k, m]) => `<button data-k="${k}"><span class="e">${m.emoji}</span>${m.name}<br><span class="muted" style="font-weight:600">원가 ${m.cost.toLocaleString()}</span></button>`).join('')}</div>
-    <p class="muted" style="font-size:13px;margin:8px 0 0">💡 메뉴마다 원가와 손님이 좋아하는 가격이 달라요. 뉴스에 따라 인기도 바뀌어요.</p>
     <div style="height:14px"></div>
     <button class="btn big full red" id="go">🚚 가게 오픈!</button>
     <div style="height:8px"></div>
@@ -434,47 +514,47 @@ function sJoinForm() {
   </div>`;
   app.querySelectorAll('.menuPick button').forEach(b => b.onclick = () => { menu = b.dataset.k; app.querySelectorAll('.menuPick button').forEach(x => x.classList.toggle('on', x === b)); });
   $('#go').onclick = async () => {
-    const num = parseInt($('#num').value), nick = $('#nick').value.trim(), shop = $('#shop').value.trim();
+    const cls = parseInt($('#cls').value), num = parseInt($('#num').value), nick = $('#nick').value.trim(), shop = $('#shop').value.trim();
+    if (!cls) return toast('반을 선택하세요');
     if (!num) return toast('번호를 입력하세요');
     if (!nick) return toast('별명을 입력하세요');
     if (!menu) return toast('메뉴를 골라주세요');
     $('#go').disabled = true;
     try {
-      const r = await rpc('bl_join', { p_code: S.code, p_num: num, p_nick: nick, p_shop: shop || nick + '네', p_menu: menu });
+      const r = await rpc('bl_join', { p_code: S.code, p_cls: cls, p_num: num, p_nick: nick, p_shop: shop || nick + '네', p_menu: menu });
       S.auth = r; localStorage.setItem('bl_' + S.code, JSON.stringify(r));
-      const { data: me } = await sb.from('bl_players').select('*').eq('id', r.player_id).single();
-      S.me = me; sLoop();
+      const st = await rpc('bl_state', { p_player: r.player_id, p_key: r.key });
+      S.game = st.game; S.me = st.me; sLoop();
     } catch (e) { toast(e.message); $('#go').disabled = false; }
   };
 }
 
-function sLoop() {
-  stopPoll(); S.sig = ''; sTick();
-  pollTimer = setInterval(sTick, 2500);
-}
+function sLoop() { stopPoll(); S.sig = ''; sTick(); }
 async function sTick() {
+  let delay = 3500 + Math.random() * 1500;
   try {
-    const [{ data: g }, { data: me }] = await Promise.all([
-      sb.from('bl_games').select('*').eq('id', S.me.game_id).maybeSingle(),
-      sb.from('bl_players').select('*').eq('id', S.me.id).maybeSingle(),
-    ]);
-    if (!g || !me) { stopPoll(); localStorage.removeItem('bl_' + S.code); app.innerHTML = `<div class="card center"><h2>참가 정보가 사라졌어요</h2><p class="muted">선생님이 게임을 지웠거나 참가를 취소했어요.</p><button class="btn" onclick="location.reload()">다시 참가</button></div>`; return; }
+    const st = await rpc('bl_state', { p_player: S.auth.player_id, p_key: S.auth.key });
+    S.fails = 0;
+    if (!st) { localStorage.removeItem('bl_' + S.code); app.innerHTML = `<div class="card center"><h2>참가 정보가 사라졌어요</h2><p class="muted">선생님이 참가를 취소했거나 게임을 지웠어요.</p><button class="btn" onclick="location.reload()">다시 참가</button></div>`; return; }
+    const g = st.game, me = st.me;
     S.game = g; S.me = me;
     const sig = [g.status, g.round, (me.history || []).length].join('|');
-    if (sig === S.sig) return;
-    const roundChanged = S.sig.split('|')[1] !== String(g.round) || S.sig.split('|')[0] !== g.status;
-    S.sig = sig;
-    if (g.status === 'lobby') sLobby();
-    else if (g.status === 'deciding') { if (roundChanged) { S.draft = null; S.submitted = false; } await sDecide(); }
-    else if (g.status === 'revealed') sReveal();
-    else if (g.status === 'finished') sFinal();
-    else if (g.status === 'closed') app.innerHTML = `<div class="card center"><div class="spin" style="font-size:48px">🧮</div><h2>마감! 정산 중이에요…</h2><p class="muted">두근두근 결과를 기다려요</p></div>`;
-  } catch (e) { console.warn(e); }
+    if (sig !== S.sig) {
+      const roundChanged = S.sig.split('|')[1] !== String(g.round) || S.sig.split('|')[0] !== g.status;
+      S.sig = sig;
+      if (g.status === 'lobby') sLobby();
+      else if (g.status === 'deciding') { if (roundChanged) { S.draft = st.decision || null; S.submitted = !!st.decision; } sDecide(); }
+      else if (g.status === 'closed') app.innerHTML = `<div class="card center"><div class="spin" style="font-size:48px">🧮</div><h2>마감! 정산 중이에요…</h2><p class="muted">두근두근 결과를 기다려요</p></div>`;
+      else if (g.status === 'revealed') sReveal();
+      else if (g.status === 'finished') { sFinal(); return; }
+    }
+  } catch (e) { S.fails++; delay = Math.min(15000, 3000 * S.fails); console.warn(e); }
+  pollTimer = setTimeout(sTick, delay);
 }
 function myHeader() {
   const me = S.me, m = MENUS[me.menu];
   return `<div class="card" style="padding:14px">
-    <div class="row"><div style="font-size:40px">${m.emoji}</div><div class="grow"><div style="font-weight:900;font-size:19px">${esc(me.shop)}</div><div class="muted" style="font-size:13px">${esc(me.nickname)} 사장님 · ${me.num}번 · ${m.name}${me.quality ? ' · ' + '⭐'.repeat(me.quality) : ''}</div></div></div>
+    <div class="row"><div style="font-size:40px">${m.emoji}</div><div class="grow"><div style="font-weight:900;font-size:19px">${esc(me.shop)}</div><div class="muted" style="font-size:13px">${me.cls}반 ${me.num}번 ${esc(me.nickname)} 사장님 · ${m.name}${me.quality ? ' · ' + '⭐'.repeat(me.quality) : ''}</div></div></div>
     <div class="grid g3" style="margin-top:10px">
       <div class="stat"><div class="k">💵 현금</div><div class="v">${man(me.cash)}</div></div>
       <div class="stat"><div class="k">🏦 대출</div><div class="v">${man(me.loan)}</div></div>
@@ -487,44 +567,50 @@ function sLobby() {
   <button class="btn white" onclick="showRules()">📖 게임 규칙 보기</button></div>`;
 }
 
-async function sDecide() {
-  const g = S.game, me = S.me, m = MENUS[me.menu], ev = eventById(g.event_order[g.round - 1]);
+function sDecide() {
+  const g = S.game, me = S.me, ev = eventById(g.event_order[g.round - 1]);
+  const offer = offerById((g.offer_order || [])[g.round - 1]);
   const isFest = CFG.FEST_ROUNDS.includes(g.round);
+  const last = me.last;
   if (!S.draft) {
-    let prev = null;
-    try { prev = await rpc('bl_my_decision', { p_player: me.id, p_key: S.auth.key, p_round: g.round }); } catch (e) { }
-    S.submitted = !!prev;
-    const last = me.last;
-    S.draft = prev || { price: last ? last.price : m.ref, qty: last ? Math.min(CFG.QTY_MAX, Math.max(10, last.demand)) : 100, ad: 0, borrow: 0, repay: 0, upgrade: false, festival: false };
+    const m0 = MENUS[me.menu];
+    S.draft = { price: last && last.menu === me.menu ? last.listPrice || last.price : m0.ref, qty: last ? Math.min(CFG.QTY_MAX, Math.max(10, last.demand)) : 100, ad: 0, borrow: 0, repay: 0, upgrade: false, festival: false, offer: false, menu: me.menu };
   }
-  const last = me.last, ms = g.reveal && g.reveal.menuStats && g.reveal.menuStats[me.menu];
-  const hint = last ? `<div class="stat" style="margin-bottom:12px;font-size:14px;line-height:1.6">📊 <b>지난달 기록</b><br>가격 ${last.price.toLocaleString()}원 · 준비 ${last.qty}개 → 찾아온 손님 <b>${last.demand}명</b>, 판매 ${last.sales}개${last.leftover ? ` · <span class="minus">남아서 버림 ${last.leftover}개</span>` : ''}${last.missed ? ` · <span class="minus">놓친 손님 ${last.missed}명</span>` : ''}${ms ? `<br>같은 메뉴(${ms.n}명) 평균 가격 ${ms.avgPrice.toLocaleString()}원 · 평균 손님 ${ms.avgDemand}명` : ''}</div>` : `<div class="stat" style="margin-bottom:12px;font-size:14px">💡 첫 달이에요! 보통 ${m.name}는 <b>${m.ref.toLocaleString()}원</b> 정도에 팔리고, 가게 하나에 한 달 손님은 100명 안팎이에요.</div>`;
+  if (!S.draft.menu) S.draft.menu = me.menu;
+  const ms = g.reveal && g.reveal.menuStats || {};
+  const hint = last ? `<div class="stat" style="margin-bottom:12px;font-size:14px;line-height:1.6">📊 <b>지난달 내 기록</b><br>${MENUS[last.menu].emoji} 가격 ${last.price.toLocaleString()}원 · 준비 ${last.qty}개 → 손님 <b>${last.demand}명</b>, 판매 ${last.sales}개${last.leftover ? ` · <span class="minus">버림 ${last.leftover}개</span>` : ''}${last.missed ? ` · <span class="minus">놓친 손님 ${last.missed}명</span>` : ''}</div>` : `<div class="stat" style="margin-bottom:12px;font-size:14px">💡 첫 달이에요! 가게 하나에 한 달 손님은 보통 100명 안팎이에요.</div>`;
   const adOpts = [0, 10000, 30000, 50000, 100000, 200000];
   const borrowOpts = [0, 100000, 300000, 500000];
   const canBorrow = Math.max(0, CFG.LOAN_MAX - me.loan);
-  app.innerHTML = `<div class="brand">🚚 창업 리그 <small>${esc(g.class_name)} · ${g.round}월</small></div>
+  app.innerHTML = `<div class="brand">🚚 창업 리그 <small>${me.cls}반 · ${g.round}월</small></div>
   ${eventCard(ev, g.round, g.total_rounds)}
   ${myHeader()}
   <div class="card">
     <h2>📝 ${g.round}월 운영 계획</h2>
     ${hint}
-    <label>🏷️ 판매 가격 (1개)</label>
+    ${last && last.goodwill ? `<div class="stat" style="margin-bottom:12px;background:#ffe9f2">💝 지난달 기부 덕분에 이번 달 손님 +25%!</div>` : ''}
+    <label>🍽️ 이번 달 메뉴 <span class="muted">(바꾸면 10만원 · 지난달 학년 전체 가게 수/평균 손님)</span></label>
+    <div class="menuPick" id="menu">${Object.entries(MENUS).map(([k, m]) => `<button data-k="${k}" class="${S.draft.menu === k ? 'on' : ''}"><span class="e">${m.emoji}</span>${m.name}<br><span class="muted" style="font-weight:600;font-size:11px">${ms[k] ? `${ms[k].n}곳 · ${ms[k].avgDemand}명` : (last ? '0곳' : '')}${k === me.menu ? '<br>현재' : ''}</span></button>`).join('')}</div>
+    <label>🏷️ 판매 가격 (1개) <span class="muted" id="refp"></span></label>
     <div class="stepper"><button data-s="price" data-d="-500">−</button><button data-s="price" data-d="-100" style="font-size:14px">-100</button><input id="price" type="number" inputmode="numeric" value="${S.draft.price}"><button data-s="price" data-d="100" style="font-size:14px">+100</button><button data-s="price" data-d="500">+</button></div>
     <label>📦 준비할 수량 <span class="muted">(1개 원가 <b id="uc"></b>)</span></label>
     <div class="stepper"><button data-s="qty" data-d="-50">−</button><button data-s="qty" data-d="-10" style="font-size:14px">-10</button><input id="qty" type="number" inputmode="numeric" value="${S.draft.qty}"><button data-s="qty" data-d="10" style="font-size:14px">+10</button><button data-s="qty" data-d="50">+</button></div>
     <label>📣 광고비</label>
     <div class="chips" id="ad">${adOpts.map(v => `<button data-v="${v}" class="${S.draft.ad === v ? 'on' : ''}">${v ? man(v) : '안 함'}</button>`).join('')}</div>
+    ${offer ? `<div style="height:14px"></div>${offerCard(offer)}<div class="toggle ${S.draft.offer ? 'on' : ''}" id="offer"><b>${offer.emoji} 제안 받아들이기${offer.cost ? ` (${man(offer.cost)})` : ''}</b><div class="sw"></div></div>` : ''}
+    ${isFest ? `<div class="festBox"><b>🎪 우리 반 축제 부스 투표!</b><p style="margin:6px 0;font-size:14px">5만원을 내고 참여할까요? <b>우리 반 60% 이상</b>이 참여하면 이번 달 <b>우리 반 전체</b> 손님 +30%! 다른 반과의 대결에서 큰 차이를 만들어요.</p>
+      <div class="toggle ${S.draft.festival ? 'on' : ''}" id="fest"><b>🙋 5만원 내고 참여하기</b><div class="sw"></div></div></div>` : ''}
+    <details style="margin-top:12px"><summary style="font-weight:800;cursor:pointer;padding:6px 0">🏦 대출 · ⭐ 설비 투자 (고급)</summary>
     <label>🏦 대출 <span class="muted">(현재 ${man(me.loan)}, 이자 월 ${Math.round((ev.rate || CFG.RATE) * 100)}%)</span></label>
     <div class="chips" id="borrow">${borrowOpts.filter(v => v <= canBorrow).map(v => `<button data-v="${v}" class="${S.draft.borrow === v ? 'on' : ''}">${v ? man(v) + ' 빌리기' : '안 빌림'}</button>`).join('')}</div>
     ${me.loan > 0 ? `<label>💸 대출 갚기</label><div class="chips" id="repay">${[0, 100000, 300000, me.loan].filter((v, i, a) => v <= me.loan && a.indexOf(v) === i).map(v => `<button data-v="${v}" class="${S.draft.repay === v ? 'on' : ''}">${v === 0 ? '안 갚음' : v === me.loan ? '전부 갚기' : man(v)}</button>`).join('')}</div>` : ''}
     ${me.quality < CFG.QUAL_MAX ? `<div class="toggle ${S.draft.upgrade ? 'on' : ''}" id="upg"><div><b>⭐ 설비 투자 (20만원)</b><br><span class="muted" style="font-size:13px">품질 ${me.quality} → ${me.quality + 1}단계: 손님 +15%, 원가 +200원</span></div><div class="sw"></div></div>` : `<div class="stat" style="margin-top:8px">⭐ 설비 최고 단계 달성!</div>`}
-    ${isFest ? `<div class="festBox"><b>🎪 반 공동 축제 부스 투표!</b><p style="margin:6px 0;font-size:14px">5만원을 내고 참여할까요? 반 친구 <b>60% 이상</b>이 참여하면 이번 달 <b>반 전체</b> 손님 +30%! 안 내도 성공하면 혜택은 받아요… 하지만 모두가 그렇게 생각하면?</p>
-      <div class="toggle ${S.draft.festival ? 'on' : ''}" id="fest"><b>🙋 5만원 내고 참여하기</b><div class="sw"></div></div></div>` : ''}
+    </details>
     <div style="height:14px"></div>
     <div class="preview" id="pv"></div>
     <div style="height:14px"></div>
     <button class="btn big full ${S.submitted ? 'green' : 'red'}" id="submit">${S.submitted ? '✅ 제출 완료 (다시 누르면 수정)' : '🚀 이번 달 계획 제출!'}</button>
-    <p class="muted center" style="font-size:13px">마감 전까지 몇 번이든 수정할 수 있어요. 제출 안 하면 알바생이 대충 운영해요 😅</p>
+    <p class="muted center" style="font-size:13px">마감 전까지 몇 번이든 수정할 수 있어요. 제출 안 하면 알바생이 대충 운영해서 우리 반 평균이 떨어져요 😅</p>
   </div>`;
 
   const upd = () => {
@@ -533,28 +619,44 @@ async function sDecide() {
     d.qty = Math.max(0, Math.min(CFG.QTY_MAX, parseInt($('#qty').value) || 0));
     let cash = me.cash + Math.min(d.borrow, canBorrow);
     const repay = Math.min(d.repay, me.loan, cash); cash -= repay;
-    const q = me.quality + (d.upgrade && me.quality < CFG.QUAL_MAX ? 1 : 0);
+    const sw = d.menu !== me.menu ? CFG.SWITCH_COST : 0;
+    let q = me.quality + (d.upgrade && me.quality < CFG.QUAL_MAX ? 1 : 0);
     const upgCost = d.upgrade && me.quality < CFG.QUAL_MAX ? CFG.UPG_COST : 0;
     const festCost = isFest && d.festival ? CFG.FEST_COST : 0;
-    const uc = unitCostOf(me.menu, q, ev);
+    let offCost = 0, costMul = 1, priceMul = 1, noAd = false;
+    if (offer && d.offer) {
+      if (offer.id === 'investor') cash += 300000; else offCost = offer.cost;
+      if (offer.id === 'copurchase') { costMul = 0.75; noAd = true; }
+      if (offer.id === 'coupon') priceMul = 0.7;
+    }
+    const ad = noAd ? 0 : d.ad;
+    const uc = Math.round(unitCostOf(d.menu, q, ev) * costMul);
     $('#uc').textContent = uc.toLocaleString() + '원';
+    $('#refp').textContent = `(${MENUS[d.menu].name} 보통 ${MENUS[d.menu].ref.toLocaleString()}원 안팎)`;
     const goods = d.qty * uc;
-    const spend = upgCost + festCost + CFG.RENT + d.ad + goods;
-    const left = cash - spend;
-    const maxQty = Math.max(0, Math.floor((cash - upgCost - festCost - CFG.RENT - d.ad) / uc));
-    const margin = d.price - uc;
+    const fixed = sw + upgCost + festCost + offCost + CFG.RENT + ad;
+    const left = cash - fixed - goods;
+    const maxQty = Math.max(0, Math.floor((cash - fixed) / uc));
+    const sell = Math.round(d.price * priceMul);
+    const margin = sell - uc;
     $('#pv').innerHTML = `쓸 수 있는 돈 <b>${man(cash)}</b><br>
       재료비 ${d.qty}개 × ${uc.toLocaleString()}원 = <b>${man(goods)}</b><br>
-      임대료 ${man(CFG.RENT)}${d.ad ? ` · 광고 ${man(d.ad)}` : ''}${upgCost ? ` · 설비 ${man(upgCost)}` : ''}${festCost ? ` · 축제 ${man(festCost)}` : ''}<br>
+      임대료 ${man(CFG.RENT)}${ad ? ` · 광고 ${man(ad)}` : ''}${sw ? ` · 메뉴 변경 ${man(sw)}` : ''}${upgCost ? ` · 설비 ${man(upgCost)}` : ''}${festCost ? ` · 축제 ${man(festCost)}` : ''}${offCost ? ` · 제안 ${man(offCost)}` : ''}${noAd && d.ad ? ' <span class="warn">(공동 구매라 광고 불가)</span>' : ''}<br>
       남는 현금 <b>${man(left)}</b> ${left < 0 ? `<span class="warn">⚠ 돈이 모자라요! 최대 ${maxQty}개까지만 준비돼요</span>` : ''}<br>
-      1개 팔 때마다 <b class="${margin > 0 ? '' : 'warn'}">${margin > 0 ? '+' : ''}${margin.toLocaleString()}원</b> ${margin <= 0 ? '<span class="warn">⚠ 팔수록 손해!</span>' : ''} · 다 팔면 매출 ${man(d.qty * d.price)}`;
+      1개 팔 때마다 <b class="${margin > 0 ? '' : 'warn'}">${margin > 0 ? '+' : ''}${margin.toLocaleString()}원</b>${priceMul < 1 ? ` (쿠폰 할인가 ${sell.toLocaleString()}원)` : ''} ${margin <= 0 ? '<span class="warn">⚠ 팔수록 손해!</span>' : ''} · 다 팔면 매출 ${man(d.qty * sell)}`;
   };
   app.querySelectorAll('.stepper button').forEach(b => b.onclick = () => { const el = $('#' + b.dataset.s); el.value = Math.max(0, (parseInt(el.value) || 0) + parseInt(b.dataset.d)); upd(); });
   ['price', 'qty'].forEach(id => $('#' + id).oninput = upd);
+  app.querySelectorAll('#menu button').forEach(b => b.onclick = () => {
+    const k = b.dataset.k; if (k === S.draft.menu) return;
+    S.draft.menu = k; $('#price').value = MENUS[k].ref;
+    app.querySelectorAll('#menu button').forEach(x => x.classList.toggle('on', x === b)); upd();
+    if (k !== me.menu) toast(`${MENUS[k].emoji} ${MENUS[k].name}(으)로 변경! 10만원이 들어요`);
+  });
   const chipGroup = (id, key) => { const el = $('#' + id); if (!el) return; el.querySelectorAll('button').forEach(b => b.onclick = () => { S.draft[key] = parseInt(b.dataset.v); el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); upd(); }); };
   chipGroup('ad', 'ad'); chipGroup('borrow', 'borrow'); chipGroup('repay', 'repay');
   const tog = (id, key) => { const el = $('#' + id); if (!el) return; el.onclick = () => { S.draft[key] = !S.draft[key]; el.classList.toggle('on', S.draft[key]); upd(); }; };
-  tog('upg', 'upgrade'); tog('fest', 'festival');
+  tog('upg', 'upgrade'); tog('fest', 'festival'); tog('offer', 'offer');
   upd();
   $('#submit').onclick = async () => {
     upd();
@@ -570,6 +672,7 @@ async function sDecide() {
 function receipt(L) {
   const line = (k, v, cls = '') => `<div class="l"><span>${k}</span><span class="${cls}">${v}</span></div>`;
   return `<div class="receipt">
+    ${line('메뉴 / 가격', `${MENUS[L.menu].emoji} ${MENUS[L.menu].name} ${L.price.toLocaleString()}원`)}
     ${line('찾아온 손님', L.demand + '명')}
     ${line('준비 / 판매', `${L.qty}개 / ${L.sales}개`)}
     ${L.spoiled ? line('🦠 고장으로 폐기', L.spoiled + '개', 'minus') : ''}
@@ -580,7 +683,10 @@ function receipt(L) {
     ${line('재료비', '-' + won(L.goods), 'minus')}
     ${line('임대료', '-' + won(L.rent), 'minus')}
     ${L.ad ? line('광고비', '-' + won(L.ad), 'minus') : ''}
+    ${L.switched ? line('메뉴 변경', '-' + won(CFG.SWITCH_COST), 'minus') : ''}
     ${L.fest ? line('축제 부스', '-' + won(CFG.FEST_COST), 'minus') : ''}
+    ${L.offerCost ? line('특별 제안 비용', '-' + won(L.offerCost), 'minus') : ''}
+    ${L.offerExtra ? line('특별 제안 결과', (L.offerExtra > 0 ? '+' : '') + won(L.offerExtra), L.offerExtra > 0 ? 'plus' : 'minus') : ''}
     ${L.interest ? line('대출 이자', '-' + won(L.interest), 'minus') : ''}
     ${L.tax ? line('세금(10%)', '-' + won(L.tax), 'minus') : ''}
     <div class="l t"><span>이번 달 이익</span><span class="${L.profit >= 0 ? 'plus' : 'minus'}">${L.profit >= 0 ? '+' : ''}${won(L.profit)}</span></div>
@@ -594,46 +700,57 @@ function feedback(L) {
   if (L.profit < 0 && L.price <= L.unitCost) tips.push('가격이 원가보다 낮아서 팔수록 손해였어요.');
   if (L.leftover > L.qty * 0.3) tips.push('재료가 많이 남았어요. 손님 수를 예상해서 준비량을 줄여 보세요.');
   if (L.missed > 15) tips.push('손님을 많이 놓쳤어요! 다음엔 더 많이 준비해도 좋겠어요.');
-  if (L.capped && (S.game.reveal?.menuStats?.[L.menu]?.n || 0) > 1) tips.push('같은 메뉴 가게가 많아 손님을 나눠 가졌어요.');
+  if (L.capped) tips.push('같은 메뉴 가게가 많아 손님을 나눠 가졌어요. 메뉴를 바꿔 볼까요?');
   if (!tips.length && L.profit > 0) tips.push('👍 잘 운영했어요! 다음 뉴스도 꼼꼼히 보세요.');
   return tips.map(t => `<div style="margin-top:6px">💬 ${t}</div>`).join('');
+}
+function classBoard(classes, myCls) {
+  return `<table>${classes.map((c, i) => `<tr class="${c.cls === myCls ? 'rank1' : ''}"><td style="width:40px">${MEDAL[i] || i + 1}</td><td><b>${c.cls}반</b>${c.fest ? ` <span class="muted" style="font-size:12px">${c.fest.success ? '🎪성공' : '🎪실패'}</span>` : ''}</td><td class="r">${man(c.avgNet)}</td></tr>`).join('')}</table>`;
 }
 function sReveal() {
   const me = S.me, L = me.last, g = S.game;
   if (!L || L.round !== g.round) { app.innerHTML = `<div class="card center"><div class="spin" style="font-size:48px">🧮</div><h2>정산 중…</h2></div>`; return; }
   const card = L.luck ? LUCK.find(c => c.id === L.luck) : null;
-  const fest = g.reveal && g.reveal.festival;
-  app.innerHTML = `<div class="brand">🚚 창업 리그 <small>${esc(g.class_name)} · ${g.round}월 결산</small></div>
+  const R = g.reveal || {};
+  const myC = (R.classes || []).find(c => c.cls === me.cls);
+  const myCRank = (R.classes || []).findIndex(c => c.cls === me.cls) + 1;
+  app.innerHTML = `<div class="brand">🚚 창업 리그 <small>${me.cls}반 · ${g.round}월 결산</small></div>
   ${card ? `<div class="luckCard ${card.good ? '' : 'bad'}"><div class="em">${card.emoji}</div><h2>${card.good ? '행운 카드!' : '앗, 불운 카드…'}</h2><div style="font-weight:800;font-size:18px">${card.title} · ${card.desc}</div></div>` : ''}
-  ${fest ? `<div class="card center" style="background:${fest.success ? '#e9fbf1' : '#ffe9e7'}"><b>🎪 축제 부스 ${fest.success ? '성공! 반 전체 손님 +30%' : '실패…'}</b><br><span class="muted">참여율 ${fest.rate}% (필요 60%) · 나는 ${L.fest ? '참여함 🙋' : '참여 안 함'}</span></div>` : ''}
+  ${L.offerNote ? `<div class="offer rise center" style="font-size:18px;font-weight:800">${esc(L.offerNote)}</div>` : ''}
+  ${myC && myC.fest ? `<div class="card center" style="background:${myC.fest.success ? '#e9fbf1' : '#ffe9e7'}"><b>🎪 우리 반 축제 부스 ${myC.fest.success ? '성공! 손님 +30%' : '실패…'}</b><br><span class="muted">참여율 ${myC.fest.rate}% (필요 60%) · 나는 ${L.fest ? '참여함 🙋' : '참여 안 함'}</span></div>` : ''}
   <div class="card rise">
-    <div class="center"><div class="muted">반 내 순위</div><div class="big-num">${L.rank}<span style="font-size:24px">위 / ${L.of}명</span></div></div>
+    <div class="grid g3 center">
+      <div><div class="muted" style="font-size:13px">학년 순위</div><div style="font-size:30px;font-weight:900">${L.rank}<span style="font-size:14px">/${L.of}</span></div></div>
+      <div><div class="muted" style="font-size:13px">반 내 순위</div><div style="font-size:30px;font-weight:900">${L.crank}<span style="font-size:14px">/${L.cof}</span></div></div>
+      <div><div class="muted" style="font-size:13px">우리 반 순위</div><div style="font-size:30px;font-weight:900">${myCRank}<span style="font-size:14px">/${(R.classes || []).length}</span></div></div>
+    </div>
     <div style="height:12px"></div>
     ${receipt(L)}
     <div style="font-size:14px;margin-top:10px">${feedback(L)}</div>
   </div>
+  <div class="card"><h3>🏫 반 대항 순위 (1인당 평균 순자산)</h3>${classBoard(R.classes || [], me.cls)}</div>
   ${myHeader()}
   <p class="center muted">선생님이 다음 달을 시작하면 자동으로 넘어가요.</p>`;
 }
-function sFinal() {
-  const me = S.me, g = S.game;
-  sb.from('bl_players').select('*').eq('game_id', g.id).then(({ data }) => {
-    const ps = (data || []).sort((a, b) => (b.cash - b.loan) - (a.cash - a.loan));
-    const rank = ps.findIndex(p => p.id === me.id) + 1;
-    const badges = computeBadges(ps).filter(b => b.id === me.id);
-    const H = me.history || [];
-    const totalRev = H.reduce((a, h) => a + h.revenue, 0), totalSales = H.reduce((a, h) => a + h.sales, 0);
-    app.innerHTML = `<div class="brand">🚚 창업 리그 <small>${esc(g.class_name)} · 최종 결과</small></div>
-    <div class="card center rise"><div style="font-size:56px">${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🎉'}</div>
-      <div class="muted">최종 순위</div><div class="big-num">${rank}<span style="font-size:24px">위 / ${ps.length}명</span></div>
-      <div style="margin-top:10px;font-size:22px;font-weight:900">순자산 ${won(me.cash - me.loan)}</div>
-      <div class="muted">시작 50만원 → ${Math.round(((me.cash - me.loan) / CFG.START - 1) * 100)}% ${me.cash - me.loan >= CFG.START ? '성장' : '감소'}</div></div>
-    ${badges.length ? `<div class="card"><h3>🏅 내가 받은 칭호</h3><div class="grid">${badges.map(b => `<div class="badge"><div class="e">${b.emoji}</div><div><b>${b.title}</b><div class="muted">${esc(b.why)}</div></div></div>`).join('')}</div></div>` : ''}
-    <div class="card"><h3>📈 나의 ${H.length}개월</h3>
-      <table><tr><th>월</th><th class="r">가격</th><th class="r">판매</th><th class="r">이익</th><th class="r">순위</th></tr>
-      ${H.map(h => `<tr><td>${h.round}월 ${eventById(h.eventId).emoji}</td><td class="r">${h.price.toLocaleString()}</td><td class="r">${h.sales}/${h.qty}</td><td class="r ${h.profit >= 0 ? 'plus' : 'minus'}">${man(h.profit)}</td><td class="r">${h.rank}</td></tr>`).join('')}</table>
-      <p class="muted" style="font-size:14px">총 매출 ${won(totalRev)} · 총 판매 ${totalSales}개</p></div>`;
-  });
+async function sFinal() {
+  const me = S.me, g = S.game, R = g.reveal || {}, L = me.last || {};
+  const H = me.history || [];
+  const myCRank = (R.classes || []).findIndex(c => c.cls === me.cls) + 1;
+  const { data: ps } = await sb.from('bl_players').select('id,cls,nickname,shop,menu,cash,loan,history').eq('game_id', g.id);
+  const badges = computeBadges(ps || []).filter(b => b.id === me.id);
+  app.innerHTML = `<div class="brand">🚚 창업 리그 <small>최종 결과</small></div>
+  <div class="card center rise" style="background:#fff1c9"><div style="font-size:56px">${MEDAL[myCRank - 1] || '🏫'}</div>
+    <div class="muted">우리 반 최종 순위</div><div class="big-num">${me.cls}반 ${myCRank}<span style="font-size:24px">위</span></div></div>
+  <div class="card center rise">
+    <div class="grid g2"><div><div class="muted">학년 순위</div><div class="big-num" style="font-size:44px">${L.rank || '-'}<span style="font-size:18px">/${L.of || ''}</span></div></div>
+    <div><div class="muted">반 내 순위</div><div class="big-num" style="font-size:44px">${L.crank || '-'}<span style="font-size:18px">/${L.cof || ''}</span></div></div></div>
+    <div style="margin-top:10px;font-size:22px;font-weight:900">순자산 ${won(me.cash - me.loan)}</div>
+    <div class="muted">시작 50만원 → ${Math.round(((me.cash - me.loan) / CFG.START - 1) * 100)}% ${me.cash - me.loan >= CFG.START ? '성장' : '감소'}</div></div>
+  ${badges.length ? `<div class="card"><h3>🏅 내가 받은 칭호</h3><div class="grid">${badges.map(b => `<div class="badge"><div class="e">${b.emoji}</div><div><b>${b.title}</b><div class="muted">${esc(b.why)}</div></div></div>`).join('')}</div></div>` : ''}
+  <div class="card"><h3>📈 나의 ${H.length}개월</h3>
+    <table><tr><th>월</th><th>메뉴</th><th class="r">가격</th><th class="r">판매</th><th class="r">이익</th></tr>
+    ${H.map(h => `<tr><td>${h.round}월 ${eventById(h.eventId).emoji}</td><td>${MENUS[h.menu].emoji}</td><td class="r">${h.price.toLocaleString()}</td><td class="r">${h.sales}/${h.qty}</td><td class="r ${h.profit >= 0 ? 'plus' : 'minus'}">${man(h.profit)}</td></tr>`).join('')}</table></div>
+  <div class="card"><h3>🏫 반 대항 최종 순위</h3>${classBoard(R.classes || [], me.cls)}</div>`;
 }
 
 // =====================================================================
@@ -656,79 +773,75 @@ async function teacherStart(gameId) {
 async function tHome() {
   stopPoll(); history.replaceState(null, '', '?teacher=1');
   const { data: games } = await sb.from('bl_games').select('*').eq('season', SEASON).order('created_at', { ascending: false });
-  const ids = (games || []).map(g => g.id);
-  const { data: ps } = ids.length ? await sb.from('bl_players').select('game_id,cash,loan').in('game_id', ids) : { data: [] };
-  const agg = {};
-  (ps || []).forEach(p => { (agg[p.game_id] ||= { n: 0, s: 0 }); agg[p.game_id].n++; agg[p.game_id].s += p.cash - p.loan; });
-  const statusName = { lobby: '대기 중', deciding: '진행 중', revealed: '진행 중', finished: '종료' };
-  const league = (games || []).filter(g => g.status === 'finished' && agg[g.id]).map(g => ({ g, avg: Math.round(agg[g.id].s / agg[g.id].n), n: agg[g.id].n })).sort((a, b) => b.avg - a.avg);
-  app.innerHTML = `<div class="brand">🚚 학교 앞 창업 리그 <small>선생님 화면 · ${SEASON}</small><span class="grow"></span><button class="btn white sm" onclick="showRules()">📖 규칙</button> <button class="btn white sm" onclick="localStorage.removeItem('bl_pin');location.reload()">로그아웃</button></div>
+  const statusName = { lobby: '대기 중', deciding: '진행 중', closed: '진행 중', revealed: '진행 중', finished: '종료' };
+  app.innerHTML = `<div class="brand">🚚 학교 앞 창업 리그 <small>선생님 화면</small><span class="grow"></span><button class="btn white sm" onclick="showRules()">📖 규칙</button> <button class="btn white sm" onclick="localStorage.removeItem('bl_pin');location.reload()">로그아웃</button></div>
   <div class="tp-wrap">
-    <div>
-      <div class="card"><h2>➕ 새 게임 만들기</h2>
-        <div class="row"><div class="grow"><label>반 이름</label><input id="cls" placeholder="예: 3-1"></div>
-        <div style="width:140px"><label>진행 개월 수</label><select id="rounds"><option>5</option><option selected>6</option><option>7</option><option>8</option></select></div></div>
-        <div style="height:12px"></div><button class="btn red full" id="create">게임 만들기</button>
-        <p class="muted" style="font-size:13px">반마다 뉴스 순서가 무작위로 정해져서 다른 반에 정답이 새지 않아요. 3월·5월엔 축제 부스 투표가 열려요.</p></div>
-      <div class="card"><h2>📋 게임 목록</h2>
-        ${(games || []).length ? `<table><tr><th>반</th><th>코드</th><th>상태</th><th class="r">참가</th><th class="r">평균 순자산</th><th></th></tr>
-        ${games.map(g => `<tr><td><b>${esc(g.class_name)}</b><div class="muted" style="font-size:12px">${new Date(g.created_at).toLocaleDateString('ko-KR')}</div></td><td><b>${g.code}</b></td><td>${statusName[g.status] || g.status}${g.round ? ` (${g.round}/${g.total_rounds}월)` : ''}</td><td class="r">${agg[g.id]?.n || 0}명</td><td class="r">${agg[g.id] ? man(agg[g.id].s / agg[g.id].n) : '-'}</td>
-        <td class="r"><button class="btn sm" onclick="tOpen('${g.id}')">열기</button> <button class="btn white sm" onclick="tDelete('${g.id}','${esc(g.class_name)}')">🗑</button></td></tr>`).join('')}</table>` : '<p class="muted">아직 만든 게임이 없어요.</p>'}
+    <div class="card"><h2>➕ 새 학년 게임 만들기</h2>
+      <label>게임 이름</label><input id="cls" value="${new Date().getFullYear()} 3학년 창업 리그">
+      <div class="grid g2">
+        <div><label>반 수</label><select id="cc">${Array.from({ length: 12 }, (_, i) => `<option ${i + 1 === 8 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></div>
+        <div><label>진행 개월 수</label><select id="rounds"><option>4</option><option selected>5</option><option>6</option></select></div>
       </div>
+      <div style="height:12px"></div><button class="btn red full" id="create">게임 만들기</button>
+      <p class="muted" style="font-size:13px">학년 전체가 하나의 게임에 참가해요. 학생이 참가할 때 반을 고르고, 반별로 평균 순자산을 겨뤄요. 마지막 달은 항상 연말 대목이에요.</p></div>
+    <div class="card"><h2>📋 게임 목록</h2>
+      ${(games || []).length ? `<table><tr><th>게임</th><th>코드</th><th>상태</th><th></th></tr>
+      ${games.map(g => `<tr><td><b>${esc(g.class_name)}</b><div class="muted" style="font-size:12px">${new Date(g.created_at).toLocaleDateString('ko-KR')} · ${g.class_count}개 반</div></td><td><b>${g.code}</b></td><td>${statusName[g.status] || g.status}${g.round ? ` (${g.round}/${g.total_rounds}월)` : ''}</td>
+      <td class="r"><button class="btn sm" onclick="tOpen('${g.id}')">열기</button> <button class="btn white sm" onclick="tDelete('${g.id}')">🗑</button></td></tr>`).join('')}</table>` : '<p class="muted">아직 만든 게임이 없어요.</p>'}
     </div>
-    <div><div class="card"><h2>🏆 ${SEASON} 반 대항 리그</h2><p class="muted" style="font-size:13px">끝난 게임의 1인당 평균 순자산 순위</p>
-      ${league.length ? `<table>${league.map((x, i) => `<tr class="${i === 0 ? 'rank1' : ''}"><td style="font-size:22px">${['🥇', '🥈', '🥉'][i] || (i + 1)}</td><td><b>${esc(x.g.class_name)}</b><div class="muted" style="font-size:12px">${x.n}명</div></td><td class="r"><b>${man(x.avg)}</b></td></tr>`).join('')}</table>` : '<p class="muted">끝난 게임이 생기면 여기에 순위가 나와요.</p>'}
-    </div></div>
   </div>`;
   $('#create').onclick = async () => {
-    const cls = $('#cls').value.trim(); if (!cls) return toast('반 이름을 입력하세요');
-    const n = parseInt($('#rounds').value);
-    try { const g = await rpc('bl_create_game', { p_pin: T.pin, p_class: cls, p_season: SEASON, p_rounds: n, p_events: pickEventOrder(n) }); tOpen(g.id); } catch (e) { toast(e.message); }
+    const name = $('#cls').value.trim() || '창업 리그';
+    const n = parseInt($('#rounds').value), cc = parseInt($('#cc').value);
+    try { const g = await rpc('bl_create_game', { p_pin: T.pin, p_class: name, p_season: SEASON, p_rounds: n, p_events: pickEventOrder(n), p_class_count: cc, p_offers: pickOfferOrder(n) }); tOpen(g.id); } catch (e) { toast(e.message); }
   };
 }
-async function tDelete(id, name) {
-  if (prompt(`"${name}" 게임과 모든 기록을 지울까요? 지우려면 '삭제'라고 입력하세요.`) !== '삭제') return;
+async function tDelete(id) {
+  if (prompt(`이 게임과 모든 기록을 지울까요? 지우려면 '삭제'라고 입력하세요.`) !== '삭제') return;
   try { await rpc('bl_delete_game', { p_pin: T.pin, p_game: id }); tHome(); } catch (e) { toast(e.message); }
 }
 function tOpen(id) {
   stopPoll(); history.replaceState(null, '', '?teacher=1&game=' + id);
   T.game = { id }; T.sig = ''; T.step = 0; T.timerEnd = null;
-  tTick(); pollTimer = setInterval(tTick, 2000);
+  tTick();
 }
 async function tTick() {
-  if (T.busy) return;
-  try {
-    const [{ data: g }, { data: ps }] = await Promise.all([
-      sb.from('bl_games').select('*').eq('id', T.game.id).maybeSingle(),
-      sb.from('bl_players').select('*').eq('game_id', T.game.id).order('num'),
-    ]);
-    if (!g) return tHome();
-    T.game = g; T.players = ps || [];
-    if (g.status === 'deciding') {
-      const d = await rpc('bl_get_decisions', { p_pin: T.pin, p_game: g.id, p_round: g.round });
-      T.decided = new Set((d || []).map(x => x.player_id));
-    }
-    const sig = [g.status, g.round, T.players.map(p => p.id).join(','), [...T.decided].length, T.step].join('|');
-    if (sig === T.sig) return;
-    T.sig = sig; tRender();
-  } catch (e) { console.warn(e); }
+  if (!T.busy) {
+    try {
+      const [{ data: g }, { data: ps }] = await Promise.all([
+        sb.from('bl_games').select('*').eq('id', T.game.id).maybeSingle(),
+        sb.from('bl_players').select('id,cls,num,nickname,shop,menu,cash,loan,quality,last,created_at').eq('game_id', T.game.id).order('created_at'),
+      ]);
+      if (!g) return tHome();
+      T.game = g; T.players = ps || [];
+      if (g.status === 'deciding' || g.status === 'closed') {
+        const d = await rpc('bl_decided', { p_pin: T.pin, p_game: g.id, p_round: g.round });
+        T.decided = new Set(d || []);
+      }
+      const sig = [g.status, g.round, T.players.length, T.players.map(p => p.id).join('').length, T.decided.size, T.step].join('|');
+      if (sig !== T.sig) { T.sig = sig; tRender(); }
+    } catch (e) { console.warn(e); }
+  }
+  pollTimer = setTimeout(tTick, 2500);
 }
 function tTop(extra = '') {
   const g = T.game;
-  return `<div class="brand"><button class="btn white sm" onclick="tHome()">← 목록</button> 🚚 ${esc(g.class_name)} 창업 리그 <small>코드 ${g.code}</small><span class="grow"></span>${extra}<button class="btn white sm" onclick="showRules()">📖 규칙</button></div>`;
+  return `<div class="brand"><button class="btn white sm" onclick="tHome()">← 목록</button> 🚚 ${esc(g.class_name)} <small>코드 ${g.code}</small><span class="grow"></span>${extra}<button class="btn white sm" onclick="showRules()">📖 규칙</button></div>`;
 }
 function tRender() {
   const g = T.game;
   if (g.status === 'lobby') return tLobby();
-  if (g.status === 'deciding') return tDeciding();
+  if (g.status === 'deciding' || g.status === 'closed') return tDeciding();
   if (g.status === 'revealed') return tReveal();
   if (g.status === 'finished') return tFinal();
-  if (g.status === 'closed') return tDeciding();
 }
+function byClass(list) { const m = {}; for (let c = 1; c <= T.game.class_count; c++) m[c] = []; list.forEach(p => (m[p.cls] ||= []).push(p)); return m; }
 function tLobby() {
   const g = T.game, url = joinUrl(g.code);
+  const bc = byClass(T.players);
   const cnt = {}; T.players.forEach(p => cnt[p.menu] = (cnt[p.menu] || 0) + 1);
-  app.innerHTML = tTop() + `
+  const recent = T.players.slice(-24).reverse();
+  app.innerHTML = tTop(`<button class="btn white sm" onclick="tManage()">👥 참가자 관리</button> `) + `
   <div class="tp-wrap">
     <div class="card center">
       <h2>📱 폰으로 접속하세요!</h2>
@@ -737,21 +850,30 @@ function tLobby() {
       <div>코드 <span class="code">${g.code}</span></div>
     </div>
     <div class="card">
-      <div class="row"><h2 class="grow">🚚 오픈한 가게</h2><div class="big-num" style="font-size:48px">${T.players.length}</div><div>명</div></div>
+      <div class="row"><h2 class="grow">🚚 오픈한 가게</h2><div class="big-num" style="font-size:52px">${T.players.length}</div><div>명</div></div>
+      <div class="grid" style="grid-template-columns:repeat(${Math.min(6, g.class_count)},1fr);margin:10px 0">${Object.entries(bc).map(([c, l]) => `<div class="stat center"><div class="k">${c}반</div><div class="v">${l.length}명</div></div>`).join('')}</div>
       <div class="row" style="margin-bottom:10px">${Object.entries(MENUS).map(([k, m]) => `<span class="chip">${m.emoji} ${cnt[k] || 0}</span>`).join('')}</div>
-      <div class="players">${T.players.map(p => `<span class="pchip" title="클릭하면 참가 취소" style="cursor:pointer" onclick="tKick('${p.id}','${esc(p.nickname)}')">${MENUS[p.menu].emoji} ${p.num}. ${esc(p.shop)}</span>`).join('') || '<span class="muted">아직 아무도 없어요…</span>'}</div>
+      <div class="muted" style="font-size:13px;margin-bottom:6px">방금 들어온 가게</div>
+      <div class="players">${recent.map(p => `<span class="pchip">${MENUS[p.menu].emoji} ${p.cls}-${p.num} ${esc(p.shop)}</span>`).join('') || '<span class="muted">아직 아무도 없어요…</span>'}</div>
       <div style="height:16px"></div>
       <button class="btn big full red" ${T.players.length ? '' : 'disabled'} onclick="tStartRound(1)">🎬 게임 시작! (1월 뉴스 공개)</button>
-      <p class="muted" style="font-size:13px">학생 이름을 누르면 참가를 취소할 수 있어요(번호를 잘못 입력했을 때).</p>
     </div>
   </div>`;
 }
-async function tKick(id, name) { if (!confirm(name + ' 학생의 참가를 취소할까요?')) return; try { await rpc('bl_kick', { p_pin: T.pin, p_player: id }); T.sig = ''; tTick(); } catch (e) { toast(e.message); } }
+function tManage() {
+  const bc = byClass(T.players);
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="card" style="max-width:900px;width:100%"><div class="row"><h2 class="grow">👥 참가자 관리</h2><button class="btn white sm" onclick="this.closest('.modal').remove()">닫기</button></div>
+  <p class="muted" style="font-size:13px">번호를 잘못 입력한 학생을 누르면 참가를 취소할 수 있어요. 그 학생은 다시 참가하면 돼요.</p>
+  ${Object.entries(bc).map(([c, l]) => `<h3 style="margin-top:12px">${c}반 (${l.length}명)</h3><div class="players">${l.sort((a, b) => a.num - b.num).map(p => `<span class="pchip" style="cursor:pointer" onclick="tKick('${p.id}','${c}반 ${p.num}번 ${esc(p.nickname)}',this)">${p.num}. ${esc(p.nickname)}</span>`).join('') || '<span class="muted">없음</span>'}</div>`).join('')}</div>`;
+  document.body.appendChild(m);
+}
+async function tKick(id, name, el) { if (!confirm(name + ' 학생의 참가를 취소할까요?')) return; try { await rpc('bl_kick', { p_pin: T.pin, p_player: id }); el && el.remove(); T.sig = ''; } catch (e) { toast(e.message); } }
 async function tStartRound(r) {
   T.busy = true;
   try { await rpc('bl_set_game', { p_pin: T.pin, p_game: T.game.id, p_status: 'deciding', p_round: r, p_reveal: T.game.reveal }); T.timerEnd = null; T.step = 0; T.decided = new Set(); }
   catch (e) { toast(e.message); }
-  T.busy = false; T.sig = ''; tTick();
+  T.busy = false; T.sig = ''; stopPoll(); tTick();
 }
 let timerInt = null;
 function setTimer(sec) { T.timerEnd = sec ? Date.now() + sec * 1000 : null; drawTimer(); }
@@ -765,24 +887,25 @@ function drawTimer() {
 clearInterval(timerInt); timerInt = setInterval(drawTimer, 500);
 function tDeciding() {
   const g = T.game, ev = eventById(g.event_order[g.round - 1]);
+  const offer = offerById((g.offer_order || [])[g.round - 1]);
   const n = T.players.length, d = T.players.filter(p => T.decided.has(p.id)).length;
   const isFest = CFG.FEST_ROUNDS.includes(g.round);
-  app.innerHTML = tTop() + eventCard(ev, g.round, g.total_rounds) + `
-  ${isFest ? `<div class="card" style="background:#e9f3ff;border-color:var(--blue)"><h2>🎪 이번 달은 축제 부스 투표가 있어요!</h2><p style="margin:0">반 친구 60% 이상이 5만원씩 내면 반 전체 손님 +30%. 결과는 정산 때 공개돼요.</p></div>` : ''}
-  <div class="tp-wrap">
-    <div class="card">
-      <div class="row"><h2 class="grow">📝 계획 제출 현황</h2><div class="big-num" style="font-size:44px">${d}<span style="font-size:22px"> / ${n}</span></div></div>
-      <div class="progress"><div style="width:${n ? d / n * 100 : 0}%"></div></div>
-      <div style="height:12px"></div>
-      <div class="players">${T.players.map(p => `<span class="pchip ${T.decided.has(p.id) ? 'done' : 'wait'}">${T.decided.has(p.id) ? '✅' : '⏳'} ${p.num}. ${esc(p.nickname)}</span>`).join('')}</div>
-    </div>
+  const bc = byClass(T.players);
+  app.innerHTML = tTop() + `<div class="tp-wrap"><div>${eventCard(ev, g.round, g.total_rounds)}${offerCard(offer, true)}
+  ${isFest ? `<div class="card" style="background:#e9f3ff;border-color:var(--blue)"><h2 style="margin:0">🎪 반별 축제 부스 투표가 있어요!</h2><p style="margin:6px 0 0">우리 반 60% 이상이 5만원씩 내면 그 반 전체 손님 +30%. 결과는 정산 때 공개!</p></div>` : ''}</div>
     <div class="card center">
       <div class="timer" id="timer"></div>
       <div class="row" style="justify-content:center;margin:10px 0"><button class="btn white sm" onclick="setTimer(60)">1분</button><button class="btn white sm" onclick="setTimer(120)">2분</button><button class="btn white sm" onclick="setTimer(180)">3분</button><button class="btn white sm" onclick="setTimer(0)">끄기</button></div>
-      <button class="btn big full red" id="close">🔔 마감하고 결과 정산!</button>
-      <p class="muted" style="font-size:13px">미제출 학생은 알바생이 대신 운영해요(지난달 가격, 적은 수량).</p>
-    </div>
-  </div>`;
+      <div class="big-num" style="font-size:54px">${d}<span style="font-size:24px"> / ${n}</span></div>
+      <div class="progress" style="margin:8px 0 14px"><div style="width:${n ? d / n * 100 : 0}%"></div></div>
+      <button class="btn big full red" id="close" ${g.status === 'closed' ? '' : ''}>🔔 마감하고 결과 정산!</button>
+      <p class="muted" style="font-size:13px">미제출 학생은 알바생이 대신 운영해요(적은 수량).</p>
+    </div></div>
+  <div class="card"><h2>📝 반별 제출 현황</h2>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">${Object.entries(bc).map(([c, l]) => {
+      const done = l.filter(p => T.decided.has(p.id)).length; const miss = l.filter(p => !T.decided.has(p.id)).sort((a, b) => a.num - b.num);
+      return `<div class="stat"><div class="row"><b class="grow">${c}반</b><b>${done}/${l.length}</b></div><div class="progress" style="height:14px;margin:6px 0"><div style="width:${l.length ? done / l.length * 100 : 0}%"></div></div><div class="muted" style="font-size:12px">${miss.length ? '⏳ ' + miss.map(p => p.num).join(', ') + '번' : '✅ 모두 제출!'}</div></div>`;
+    }).join('')}</div></div>`;
   drawTimer();
   $('#close').onclick = tResolve;
 }
@@ -790,82 +913,88 @@ async function tResolve() {
   if (T.busy) return;
   const g = T.game;
   const n = T.players.length, d = T.decided.size;
-  if (d < n && !confirm(`아직 ${n - d}명이 제출하지 않았어요. 마감할까요?`)) return;
-  T.busy = true; $('#close').disabled = true; $('#close').textContent = '🧮 정산 중…';
+  if (g.status === 'deciding' && d < n && !confirm(`아직 ${n - d}명이 제출하지 않았어요. 마감할까요?`)) return;
+  T.busy = true; const btn = $('#close'); if (btn) { btn.disabled = true; btn.textContent = '🧮 정산 중…'; }
   try {
     await rpc('bl_set_game', { p_pin: T.pin, p_game: g.id, p_status: 'closed', p_round: g.round, p_reveal: g.reveal });
+    await new Promise(r => setTimeout(r, 800));
     const [{ data: ps }, decs] = await Promise.all([
       sb.from('bl_players').select('*').eq('game_id', g.id),
       rpc('bl_get_decisions', { p_pin: T.pin, p_game: g.id, p_round: g.round }),
     ]);
     const dm = {}; (decs || []).forEach(x => dm[x.player_id] = x.data);
-    const { results, reveal } = computeRound(ps, dm, g.event_order[g.round - 1], g.round);
-    await rpc('bl_apply', { p_pin: T.pin, p_game: g.id, p_results: results });
+    const { results, reveal } = computeRound(ps, dm, g.event_order[g.round - 1], g.round, (g.offer_order || [])[g.round - 1]);
+    for (let i = 0; i < results.length; i += 100) await rpc('bl_apply', { p_pin: T.pin, p_game: g.id, p_results: results.slice(i, i + 100) });
     await rpc('bl_set_game', { p_pin: T.pin, p_game: g.id, p_status: 'revealed', p_round: g.round, p_reveal: reveal });
     T.step = 0;
-  } catch (e) { toast('오류: ' + e.message, 5000); try { await rpc('bl_set_game', { p_pin: T.pin, p_game: g.id, p_status: 'deciding', p_round: g.round, p_reveal: g.reveal }); } catch (_) { } }
-  T.busy = false; T.sig = ''; tTick();
+  } catch (e) { toast('오류: ' + e.message + ' (다시 눌러 주세요)', 6000); }
+  T.busy = false; T.sig = ''; stopPoll(); tTick();
 }
 function tReveal() {
-  const g = T.game, R = g.reveal || {}, ev = eventById(R.eventId);
+  const g = T.game, R = g.reveal || {}, ev = eventById(R.eventId), offer = offerById(R.offerId);
   const last = g.round >= g.total_rounds;
-  const steps = ['뉴스 결과', '행운 카드', '이달의 TOP 5', '메뉴별 시장'];
+  const steps = ['뉴스·제안 결과', '행운 카드', '이달의 TOP 5', '메뉴별 시장', '반 대항 순위'];
   const nav = `<div class="row" style="justify-content:center;margin-top:8px">
     ${T.step > 0 ? `<button class="btn white" onclick="T.step--;T.sig='';tRender()">◀ 이전</button>` : ''}
     ${T.step < steps.length - 1 ? `<button class="btn big" onclick="T.step++;T.sig='';tRender()">다음: ${steps[T.step + 1]} ▶</button>` :
       (last ? `<button class="btn big red" onclick="tFinish()">🏆 최종 결과 발표!</button>` : `<button class="btn big red" onclick="tStartRound(${g.round + 1})">📰 ${g.round + 1}월 뉴스 공개 ▶</button>`)}</div>`;
   let body = '';
   if (T.step === 0) {
-    body = eventCard(ev, g.round, g.total_rounds) + `
-    ${R.festival ? `<div class="card center rise" style="background:${R.festival.success ? '#e9fbf1' : '#ffe9e7'}"><div style="font-size:56px">${R.festival.success ? '🎪🎉' : '🎪💨'}</div><h1>축제 부스 ${R.festival.success ? '대성공!' : '무산…'}</h1><div style="font-size:22px">참여율 <b>${R.festival.rate}%</b> (${R.festival.n}명) · 목표 60%</div><p class="muted">${R.festival.success ? '반 전체 손님이 30% 늘었어요!' : '혜택만 받으려다 모두가 기회를 놓쳤어요. 이게 바로 "무임승차"의 함정!'}</p></div>` : ''}
-    <div class="grid g3"><div class="card center"><div class="muted">반 평균 이익</div><div class="big-num" style="font-size:40px">${man(R.avgProfit)}</div></div>
-    <div class="card center"><div class="muted">반 평균 순자산</div><div class="big-num" style="font-size:40px">${man(R.avgNet)}</div></div>
+    const os = R.offerStat;
+    body = eventCard(ev, g.round, g.total_rounds) + (offer ? `<div class="offer rise"><div class="row"><div style="font-size:56px">${offer.emoji}</div><div class="grow"><h2 style="margin:0">${esc(offer.title)}</h2><div style="font-size:20px">학년 전체 <b>${os.rate}%</b>(${os.took}명)가 제안을 받아들였어요!</div>
+      ${os.hits && os.hits.length ? `<div style="margin-top:8px">${os.hits.map(h => `<span class="chip up" style="margin:2px">${MENUS[h.menu].emoji} ${who(h)} · ${esc(h.note)}</span>`).join('')}</div>` : ''}</div></div></div>` : '') + `
+    <div class="grid g3"><div class="card center"><div class="muted">학년 평균 이익</div><div class="big-num" style="font-size:40px">${man(R.avgProfit)}</div></div>
+    <div class="card center"><div class="muted">메뉴를 바꾼 가게</div><div class="big-num" style="font-size:40px">${R.switched || 0}곳</div></div>
     <div class="card center"><div class="muted">알바생 운영(미제출)</div><div class="big-num" style="font-size:40px">${R.autoCount || 0}명</div></div></div>`;
   } else if (T.step === 1) {
-    body = `<h1 class="center">🍀 이달의 행운 · 불운 카드</h1><div class="grid g3">${(R.luck || []).map((l, i) => { const c = LUCK.find(x => x.id === l.luck); return `<div class="luckCard ${c.good ? '' : 'bad'}" style="animation-delay:${i * .35}s"><div class="em">${c.emoji}</div><h2>${esc(l.shop)}</h2><div class="muted" style="color:#333">${MENUS[l.menu].emoji} ${esc(l.nickname)} 사장님</div><div style="font-weight:900;font-size:18px;margin-top:6px">${c.title}<br>${c.desc}</div></div>`; }).join('')}</div>`;
+    body = `<h1 class="center">🍀 이달의 행운 · 불운 카드 <span class="muted" style="font-size:18px">(총 ${R.luckTotal || 0}명)</span></h1><div class="grid g3">${(R.luck || []).map((l, i) => { const c = LUCK.find(x => x.id === l.luck); return `<div class="luckCard ${c.good ? '' : 'bad'}" style="animation-delay:${i * .25}s;margin:0"><div style="font-size:40px">${c.emoji}</div><h3 style="margin:4px 0">${esc(l.shop)}</h3><div style="color:#333">${MENUS[l.menu].emoji} ${who(l)}</div><div style="font-weight:900;margin-top:4px">${c.title} · ${c.desc}</div></div>`; }).join('')}</div>`;
   } else if (T.step === 2) {
-    body = `<div class="card"><h1>🏅 ${g.round}월 이익 TOP 5</h1><table>${(R.top || []).map((t, i) => `<tr class="rise ${i === 0 ? 'rank1' : ''}" style="animation-delay:${(4 - i) * .4}s"><td style="font-size:30px;width:60px">${['🥇', '🥈', '🥉', '4', '5'][i]}</td><td style="font-size:22px"><b>${MENUS[t.menu].emoji} ${esc(t.shop)}</b> <span class="muted">${esc(t.nickname)}</span></td><td class="r" style="font-size:24px"><b>${man(t.profit)}</b></td></tr>`).join('')}</table></div>`;
-  } else {
+    body = `<div class="card"><h1>🏅 ${g.round}월 이익 TOP 5</h1><table>${(R.top || []).map((t, i) => `<tr class="rise ${i === 0 ? 'rank1' : ''}" style="animation-delay:${(4 - i) * .4}s"><td style="font-size:30px;width:60px">${MEDAL[i] || i + 1}</td><td style="font-size:22px"><b>${MENUS[t.menu].emoji} ${esc(t.shop)}</b> <span class="muted">${who(t)}</span></td><td class="r" style="font-size:24px"><b>${man(t.profit)}</b></td></tr>`).join('')}</table></div>
+    ${R.worst ? `<div class="card rise" style="animation-delay:2.4s;background:#ffe9e7"><h2>😱 이달의 눈물 젖은 가게</h2><div style="font-size:22px">${MENUS[R.worst.menu].emoji} <b>${esc(R.worst.shop)}</b> <span class="muted">${who(R.worst)}</span> · <b class="minus">${man(R.worst.profit)}</b></div><p class="muted" style="margin:6px 0 0">다음 달엔 역전할 수 있어요! 힘내요 💪</p></div>` : ''}`;
+  } else if (T.step === 3) {
     const msx = R.menuStats || {};
-    body = `<div class="card"><h1>📊 메뉴별 시장 분석</h1><p class="muted">같은 메뉴끼리 비교해 보세요. 가격과 손님 수 사이에 어떤 관계가 보이나요?</p>
-      <table><tr><th>메뉴</th><th class="r">가게 수</th><th class="r">평균 가격</th><th class="r">평균 손님</th><th class="r">평균 판매</th></tr>
-      ${Object.entries(msx).map(([k, s]) => `<tr><td style="font-size:20px">${MENUS[k].emoji} ${MENUS[k].name}</td><td class="r">${s.n}</td><td class="r">${s.avgPrice.toLocaleString()}원</td><td class="r">${s.avgDemand}명</td><td class="r">${s.avgSales}개</td></tr>`).join('')}</table></div>
-      <div class="card"><h2>🏆 현재 반 순위 (순자산)</h2><div class="grid g5">${T.players.slice().sort((a, b) => (b.cash - b.loan) - (a.cash - a.loan)).slice(0, 10).map((p, i) => `<div class="stat"><div class="k">${i + 1}위 ${MENUS[p.menu].emoji}</div><div style="font-weight:800">${esc(p.shop)}</div><div class="v" style="font-size:16px">${man(p.cash - p.loan)}</div></div>`).join('')}</div></div>`;
+    body = `<div class="card"><h1>📊 메뉴별 시장 분석 (학년 전체)</h1><p class="muted">가게가 몰린 메뉴와 한산한 메뉴, 어디가 더 벌었을까요? 다음 달 메뉴를 바꿀지 고민해 보세요!</p>
+      <table><tr><th>메뉴</th><th class="r">가게 수</th><th class="r">평균 가격</th><th class="r">평균 손님</th><th class="r">평균 이익</th></tr>
+      ${Object.entries(msx).map(([k, s]) => `<tr><td style="font-size:20px">${MENUS[k].emoji} ${MENUS[k].name}</td><td class="r">${s.n}</td><td class="r">${s.avgPrice.toLocaleString()}원</td><td class="r">${s.avgDemand}명</td><td class="r"><b>${man(s.avgProfit)}</b></td></tr>`).join('')}</table></div>`;
+  } else {
+    const cl = R.classes || [];
+    const maxNet = Math.max(...cl.map(c => c.avgNet), 1);
+    body = `<div class="card"><h1>🏫 ${g.round}월 반 대항 순위</h1><p class="muted">1인당 평균 순자산 · 아래에서부터 공개!</p>
+      ${cl.map((c, i) => ({ c, i })).reverse().map(({ c, i }, k) => `<div class="rise" style="animation-delay:${k * .45}s;display:flex;align-items:center;gap:12px;margin:8px 0">
+        <div style="width:56px;font-size:30px;text-align:center">${MEDAL[i] || i + 1}</div><div style="width:70px;font-size:24px;font-weight:900">${c.cls}반</div>
+        <div style="flex:1;background:#fff;border:2px solid var(--ink);border-radius:10px;height:38px;overflow:hidden"><div style="height:100%;width:${Math.max(8, c.avgNet / maxNet * 100)}%;background:${i === 0 ? 'var(--yellow)' : '#ffd88a'};display:flex;align-items:center;justify-content:flex-end;padding-right:10px;font-weight:900">${man(c.avgNet)}</div></div>
+        <div style="width:170px;font-size:13px" class="muted">${c.fest ? (c.fest.success ? `🎪 성공 ${c.fest.rate}%` : `🎪 실패 ${c.fest.rate}%`) + ' · ' : ''}제출 ${c.submit}%</div></div>`).join('')}</div>`;
   }
   app.innerHTML = tTop(`<span class="chip">${g.round}월 결산 · ${T.step + 1}/${steps.length}</span> `) + body + nav;
 }
 async function tFinish() {
   T.busy = true;
   try { await rpc('bl_set_game', { p_pin: T.pin, p_game: T.game.id, p_status: 'finished', p_round: T.game.round, p_reveal: T.game.reveal }); } catch (e) { toast(e.message); }
-  T.busy = false; T.sig = ''; tTick();
+  T.busy = false; T.sig = ''; stopPoll(); tTick();
 }
 async function tFinal() {
-  const g = T.game, ps = T.players.slice().sort((a, b) => (b.cash - b.loan) - (a.cash - a.loan));
-  const avg = ps.length ? ps.reduce((a, p) => a + p.cash - p.loan, 0) / ps.length : 0;
+  stopPoll();
+  const g = T.game, R = g.reveal || {}, cl = R.classes || [];
+  const { data } = await sb.from('bl_players').select('id,cls,num,nickname,shop,menu,cash,loan,history').eq('game_id', g.id);
+  const ps = (data || []).sort((a, b) => (b.cash - b.loan) - (a.cash - a.loan));
   const badges = computeBadges(ps);
-  const { data: games } = await sb.from('bl_games').select('id,class_name').eq('season', SEASON).eq('status', 'finished');
-  const ids = (games || []).map(x => x.id);
-  const { data: all } = ids.length ? await sb.from('bl_players').select('game_id,cash,loan').in('game_id', ids) : { data: [] };
-  const agg = {}; (all || []).forEach(p => { (agg[p.game_id] ||= { n: 0, s: 0 }); agg[p.game_id].n++; agg[p.game_id].s += p.cash - p.loan; });
-  const league = (games || []).filter(x => agg[x.id]).map(x => ({ name: x.class_name, id: x.id, avg: agg[x.id].s / agg[x.id].n })).sort((a, b) => b.avg - a.avg);
-  const myRank = league.findIndex(x => x.id === g.id) + 1;
-  const pod = i => ps[i] ? `<div class="col rise" style="animation-delay:${(2 - i) * .5}s"><div style="font-size:44px">${MENUS[ps[i].menu].emoji}</div><b style="font-size:20px">${esc(ps[i].shop)}</b><div class="muted">${esc(ps[i].nickname)}</div><div style="font-weight:900">${man(ps[i].cash - ps[i].loan)}</div><div class="bar" style="height:${[170, 120, 90][i]}px;background:${['#ffc93c', '#d9dde6', '#e8b07a'][i]}">${i + 1}</div></div>` : '';
+  const mvp = {}; ps.forEach(p => { if (!mvp[p.cls]) mvp[p.cls] = p; });
+  const pod = i => cl[i] ? `<div class="col rise" style="animation-delay:${(2 - i) * .6}s"><div style="font-size:48px;font-weight:900">${cl[i].cls}반</div><div style="font-weight:900;font-size:18px">${man(cl[i].avgNet)}</div><div class="bar" style="height:${[180, 130, 95][i]}px;background:${['#ffc93c', '#d9dde6', '#e8b07a'][i]}">${MEDAL[i]}</div></div>` : '';
   app.innerHTML = tTop() + `
-  <div class="card center"><h1>🏆 ${esc(g.class_name)} 최종 결과</h1><div class="podium">${pod(1)}${pod(0)}${pod(2)}</div>
-    <div style="font-size:22px">우리 반 1인당 평균 순자산 <b class="hl">${man(avg)}</b> · ${SEASON} 리그 <b>${myRank}위</b> / ${league.length}반</div></div>
+  <div class="card center"><h1>🏆 ${esc(g.class_name)} 반 대항 최종 결과</h1><div class="podium">${pod(1)}${pod(0)}${pod(2)}</div>
+    <table style="max-width:640px;margin:0 auto">${cl.map((c, i) => `<tr class="${i === 0 ? 'rank1' : ''}"><td>${MEDAL[i] || i + 1}</td><td><b>${c.cls}반</b> <span class="muted">${c.n}명</span></td><td class="r">평균 순자산 <b>${man(c.avgNet)}</b></td><td class="r muted">MVP ${mvp[c.cls] ? esc(mvp[c.cls].nickname) : '-'}</td></tr>`).join('')}</table></div>
   <div class="tp-wrap">
-    <div class="card"><h2>🏅 칭호</h2><div class="grid g2">${badges.map(b => `<div class="badge rise"><div class="e">${b.emoji}</div><div><b>${b.title}</b> · ${esc(b.shop)}<div class="muted" style="font-size:13px">${esc(b.nickname)} · ${esc(b.why)}</div></div></div>`).join('')}</div></div>
-    <div class="card"><h2>🏫 반 대항 리그</h2><table>${league.map((x, i) => `<tr class="${x.id === g.id ? 'rank1' : ''}"><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td><b>${esc(x.name)}</b></td><td class="r">${man(x.avg)}</td></tr>`).join('')}</table></div>
+    <div class="card"><h2>🥇 개인 TOP 10</h2><table>${ps.slice(0, 10).map((p, i) => `<tr class="${i === 0 ? 'rank1' : ''}"><td>${MEDAL[i] || i + 1}</td><td>${MENUS[p.menu].emoji} <b>${esc(p.shop)}</b> <span class="muted">${p.cls}반 ${esc(p.nickname)}</span></td><td class="r"><b>${man(p.cash - p.loan)}</b></td></tr>`).join('')}</table></div>
+    <div class="card"><h2>🏅 칭호</h2><div class="grid">${badges.map(b => { const p = ps.find(x => x.id === b.id); return `<div class="badge rise"><div class="e">${b.emoji}</div><div><b>${b.title}</b> · ${esc(b.shop)}<div class="muted" style="font-size:13px">${p ? p.cls + '반 ' : ''}${esc(b.nickname)} · ${esc(b.why)}</div></div></div>`; }).join('')}</div></div>
   </div>
-  <div class="card"><h2>전체 순위</h2><table><tr><th>순위</th><th>가게</th><th>사장님</th><th class="r">현금</th><th class="r">대출</th><th class="r">순자산</th></tr>
-  ${ps.map((p, i) => `<tr><td>${i + 1}</td><td>${MENUS[p.menu].emoji} ${esc(p.shop)}</td><td>${p.num}. ${esc(p.nickname)}</td><td class="r">${man(p.cash)}</td><td class="r">${man(p.loan)}</td><td class="r"><b>${man(p.cash - p.loan)}</b></td></tr>`).join('')}</table></div>
-  <div class="card"><h2>💬 마무리 토론 질문</h2><ol class="rules"><li>가격을 올렸을 때와 내렸을 때 손님 수는 어떻게 달라졌나요? (수요의 법칙)</li><li>같은 메뉴를 고른 친구가 많을 때 어떤 일이 있었나요? (경쟁과 시장 점유)</li><li>축제 부스 투표에서 참여하지 않은 이유는? 모두가 그랬다면? (무임승차, 공공재)</li><li>대출을 받은 친구는 도움이 됐나요, 부담이 됐나요? (이자와 레버리지의 위험)</li></ol></div>`;
+  <div class="card"><h2>💬 마무리 토론 질문</h2><ol class="rules"><li>가격을 올렸을 때와 내렸을 때 손님 수는 어떻게 달라졌나요? (수요의 법칙)</li><li>가게가 몰린 메뉴와 한산한 메뉴 중 어디가 더 벌었나요? 메뉴를 바꾼 친구는 성공했나요? (경쟁과 틈새시장)</li><li>우리 반 축제 부스는 성공했나요? 참여하지 않은 이유는? (무임승차, 공공재)</li><li>특별 제안 중 가장 이득이었던 것과 손해였던 것은? 위험과 기대 수익을 비교해 봐요. (위험과 선택)</li></ol></div>`;
 }
 
 // ===== 라우팅 =====
 if (params.get('code')) studentStart(params.get('code'));
 else if (params.get('teacher')) teacherStart(params.get('game'));
 else landing();
+
 </script>
 </body>
 </html>
